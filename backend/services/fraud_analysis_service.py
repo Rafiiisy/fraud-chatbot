@@ -13,12 +13,12 @@ import logging
 backend_path = Path(__file__).parent.parent
 sys.path.append(str(backend_path))
 
-from core.sql_generator import QuestionType
-from core.ai_sql_generator import AISQLGenerator
-from core.hybrid_document_processor import HybridDocumentProcessor
-from core.chart_generator import ChartGenerator
-from core.response_generator import ResponseGenerator
-from core.query_classifier import QueryClassifier
+from core.query.sql_generator import QuestionType
+from core.query.ai_sql_generator import AISQLGenerator
+from core.document.hybrid_document_processor import HybridDocumentProcessor
+from core.response.chart_generator import ChartGenerator
+from core.response.response_generator import ResponseGenerator
+from core.query.query_classifier import QueryClassifier
 from data.api_database_manager import APIDatabaseManager
 from agents.agent_coordinator import AgentCoordinator
 from agents.forecasting_agent import ForecastingAgent
@@ -138,19 +138,21 @@ class FraudAnalysisService:
             Dictionary containing complete response
         """
         if not self.initialized:
-            return {
-                'error': 'Service not initialized. Call initialize() first.',
-                'status': 'error'
-            }
+            return self._format_response(
+                answer="Service not initialized. Please try again later.",
+                status='error',
+                error='Service not initialized. Call initialize() first.'
+            )
         
         try:
             # Validate query
             is_valid, errors = self.query_classifier.validate_query(question)
             if not is_valid:
-                return {
-                    'error': 'Invalid query: ' + '; '.join(errors),
-                    'status': 'error'
-                }
+                return self._format_response(
+                    answer="I couldn't understand your question. Please try rephrasing it.",
+                    status='error',
+                    error='Invalid query: ' + '; '.join(errors)
+                )
             
             # Classify question
             question_type, confidence, metadata = self.query_classifier.classify_query(question)
@@ -175,17 +177,19 @@ class FraudAnalysisService:
             else:
                 self.logger.error(f"Unknown handler: {handler_info['handler']} for question type: {question_type}")
                 self.logger.error(f"Forecasting available: {self.forecasting_available}, Agent: {self.forecasting_agent is not None}")
-                return {
-                    'error': f'Unknown handler: {handler_info["handler"]}',
-                    'status': 'error'
-                }
+                return self._format_response(
+                    answer="I encountered an error processing your question.",
+                    status='error',
+                    error=f'Unknown handler: {handler_info["handler"]}'
+                )
                 
         except Exception as e:
             self.logger.error(f"Error processing question: {e}")
-            return {
-                'error': f'Error processing question: {str(e)}',
-                'status': 'error'
-            }
+            return self._format_response(
+                answer="I encountered an error while processing your question.",
+                status='error',
+                error=f'Error processing question: {str(e)}'
+            )
     
     async def _handle_question_with_agents(self, question: str, question_type: QuestionType,
                                          confidence: float, metadata: Dict) -> Dict[str, Any]:
@@ -300,19 +304,21 @@ class FraudAnalysisService:
         Synchronous version of process_question for fallback
         """
         if not self.initialized:
-            return {
-                'error': 'Service not initialized. Call initialize() first.',
-                'status': 'error'
-            }
+            return self._format_response(
+                answer="Service not initialized. Please try again later.",
+                status='error',
+                error='Service not initialized. Call initialize() first.'
+            )
         
         try:
             # Validate query
             is_valid, errors = self.query_classifier.validate_query(question)
             if not is_valid:
-                return {
-                    'error': 'Invalid query: ' + '; '.join(errors),
-                    'status': 'error'
-                }
+                return self._format_response(
+                    answer="I couldn't understand your question. Please try rephrasing it.",
+                    status='error',
+                    error='Invalid query: ' + '; '.join(errors)
+                )
             
             # Classify question
             question_type, confidence, metadata = self.query_classifier.classify_query(question)
@@ -333,17 +339,19 @@ class FraudAnalysisService:
                 self.logger.info(f"Routing question to document processor")
                 return self._handle_document_question(question, question_type, confidence, metadata)
             else:
-                return {
-                    'error': f'Unknown handler: {handler_info["handler"]}',
-                    'status': 'error'
-                }
+                return self._format_response(
+                    answer="I encountered an error processing your question.",
+                    status='error',
+                    error=f'Unknown handler: {handler_info["handler"]}'
+                )
                 
         except Exception as e:
             self.logger.error(f"Error processing question: {e}")
-            return {
-                'error': f'Error processing question: {str(e)}',
-                'status': 'error'
-            }
+            return self._format_response(
+                answer="I encountered an error while processing your question.",
+                status='error',
+                error=f'Error processing question: {str(e)}'
+            )
     
     
     def _should_fallback_to_documents(self, sql_result: Dict, question: str, question_type: QuestionType) -> bool:
@@ -416,7 +424,10 @@ class FraudAnalysisService:
                 # Check if this should fallback to document processing
                 if self._should_fallback_to_documents(sql_result, question, question_type):
                     self.logger.info("AI SQL found no data, falling back to document processing")
-                    print("=== FALLING BACK TO DOCUMENT PROCESSING ===")
+                    print("=== FALLING BACK TO HYBRID DOCUMENT PROCESSING ===")
+                    print(f"Reason: {sql_result.get('error', 'No data available')}")
+                    print(f"Question type: {question_type.value}")
+                    print(f"Question: {question}")
                     return self._handle_document_question(question, question_type, confidence, metadata)
                 else:
                     # Handle other SQL generation failures
@@ -449,7 +460,7 @@ class FraudAnalysisService:
                 chart = self._generate_ai_chart(question_type, data, sql_result)
             
             # Generate response using AI SQL generator insights
-            response = self._generate_ai_response(question, question_type, data, sql_result)
+            response = self._generate_ai_response(question, question_type, data, sql_result, confidence, metadata)
             
             # Add chart and metadata
             response['chart'] = chart
@@ -555,7 +566,8 @@ class FraudAnalysisService:
             return None
     
     def _generate_ai_response(self, question: str, question_type: QuestionType, 
-                             data: pd.DataFrame, sql_result: Dict) -> Dict[str, Any]:
+                             data: pd.DataFrame, sql_result: Dict, 
+                             confidence: float = 0.8, metadata: Dict = None) -> Dict[str, Any]:
         """
         Generate response for AI SQL generator results
         
@@ -569,6 +581,9 @@ class FraudAnalysisService:
             Response dictionary
         """
         try:
+            if metadata is None:
+                metadata = {}
+                
             if data is None or data.empty:
                 return {
                     'answer': 'No data available for this analysis.',
@@ -598,7 +613,7 @@ class FraudAnalysisService:
                     insights.append(f"Fraud rates vary significantly across states (std dev: {state_variance:.2f}%)")
             
             elif 'time_period' in data.columns:
-                # Temporal analysis
+                # Enhanced temporal analysis
                 if 'period_type' in data.columns:
                     # Combined daily/monthly analysis
                     daily_data = data[data['period_type'] == 'daily']
@@ -606,32 +621,106 @@ class FraudAnalysisService:
                     
                     if not daily_data.empty:
                         daily_volatility = daily_data['fraud_percentage'].std()
+                        daily_mean = daily_data['fraud_percentage'].mean()
+                        daily_median = daily_data['fraud_percentage'].median()
+                        
                         insights.append(f"Daily fraud rate volatility: {daily_volatility:.2f}% (standard deviation)")
+                        insights.append(f"Average daily fraud rate: {daily_mean:.2f}%")
+                        insights.append(f"Median daily fraud rate: {daily_median:.2f}%")
                         
                         max_daily = daily_data.loc[daily_data['fraud_percentage'].idxmax()]
+                        min_daily = daily_data.loc[daily_data['fraud_percentage'].idxmin()]
                         insights.append(f"Highest daily fraud rate: {max_daily['time_period']} with {max_daily['fraud_percentage']:.2f}%")
+                        insights.append(f"Lowest daily fraud rate: {min_daily['time_period']} with {min_daily['fraud_percentage']:.2f}%")
+                        
+                        # Calculate trend over time
+                        if len(daily_data) > 1:
+                            first_half = daily_data.iloc[:len(daily_data)//2]['fraud_percentage'].mean()
+                            second_half = daily_data.iloc[len(daily_data)//2:]['fraud_percentage'].mean()
+                            trend_direction = "increasing" if second_half > first_half else "decreasing"
+                            trend_magnitude = abs(second_half - first_half)
+                            insights.append(f"Daily fraud rate shows {trend_direction} trend ({trend_magnitude:.2f}% change from first to second half)")
                     
                     if not monthly_data.empty:
                         monthly_trend = "increasing" if monthly_data['fraud_percentage'].iloc[-1] > monthly_data['fraud_percentage'].iloc[0] else "decreasing"
+                        monthly_volatility = monthly_data['fraud_percentage'].std()
+                        monthly_mean = monthly_data['fraud_percentage'].mean()
+                        
                         insights.append(f"Monthly fraud rate shows {monthly_trend} trend over time")
+                        insights.append(f"Monthly fraud rate volatility: {monthly_volatility:.2f}%")
+                        insights.append(f"Average monthly fraud rate: {monthly_mean:.2f}%")
                         
                         max_monthly = monthly_data.loc[monthly_data['fraud_percentage'].idxmax()]
+                        min_monthly = monthly_data.loc[monthly_data['fraud_percentage'].idxmin()]
                         insights.append(f"Peak monthly fraud period: {max_monthly['time_period']} with {max_monthly['fraud_percentage']:.2f}% fraud rate")
+                        insights.append(f"Lowest monthly fraud period: {min_monthly['time_period']} with {min_monthly['fraud_percentage']:.2f}% fraud rate")
+                        
+                        # Compare daily vs monthly patterns
+                        if not daily_data.empty:
+                            daily_vol = daily_data['fraud_percentage'].std()
+                            monthly_vol = monthly_data['fraud_percentage'].std()
+                            if daily_vol > monthly_vol:
+                                insights.append(f"Daily patterns show higher volatility ({daily_vol:.2f}%) than monthly patterns ({monthly_vol:.2f}%)")
+                            else:
+                                insights.append(f"Monthly patterns show higher volatility ({monthly_vol:.2f}%) than daily patterns ({daily_vol:.2f}%)")
                 else:
                     # Single period type
                     if len(data) > 1:
                         trend = "increasing" if data['fraud_percentage'].iloc[-1] > data['fraud_percentage'].iloc[0] else "decreasing"
+                        volatility = data['fraud_percentage'].std()
+                        mean_rate = data['fraud_percentage'].mean()
+                        median_rate = data['fraud_percentage'].median()
+                        
                         insights.append(f"Fraud rate shows {trend} trend over time")
+                        insights.append(f"Fraud rate volatility: {volatility:.2f}% (standard deviation)")
+                        insights.append(f"Average fraud rate: {mean_rate:.2f}%")
+                        insights.append(f"Median fraud rate: {median_rate:.2f}%")
                         
                         max_period = data.loc[data['fraud_percentage'].idxmax()]
+                        min_period = data.loc[data['fraud_percentage'].idxmin()]
                         insights.append(f"Peak fraud period: {max_period['time_period']} with {max_period['fraud_percentage']:.2f}% fraud rate")
+                        insights.append(f"Lowest fraud period: {min_period['time_period']} with {min_period['fraud_percentage']:.2f}% fraud rate")
             
             elif 'merchant' in data.columns:
-                # Merchant analysis
+                # Enhanced merchant analysis
                 top_merchant = data.iloc[0]
+                bottom_merchant = data.iloc[-1]
+                total_merchants = len(data)
+                avg_fraud_rate = data['fraud_percentage'].mean()
+                median_fraud_rate = data['fraud_percentage'].median()
+                fraud_rate_std = data['fraud_percentage'].std()
+                
                 insights.append(f"Highest risk merchant: {top_merchant['merchant']} with {top_merchant['fraud_percentage']:.2f}% fraud rate")
+                insights.append(f"Lowest risk merchant: {bottom_merchant['merchant']} with {bottom_merchant['fraud_percentage']:.2f}% fraud rate")
+                insights.append(f"Average fraud rate across {total_merchants} merchants: {avg_fraud_rate:.2f}%")
+                insights.append(f"Median fraud rate: {median_fraud_rate:.2f}%")
+                insights.append(f"Fraud rate standard deviation: {fraud_rate_std:.2f}%")
+                
+                # Risk categorization
+                high_risk_threshold = avg_fraud_rate + fraud_rate_std
+                low_risk_threshold = avg_fraud_rate - fraud_rate_std
+                high_risk_merchants = data[data['fraud_percentage'] > high_risk_threshold]
+                low_risk_merchants = data[data['fraud_percentage'] < low_risk_threshold]
+                
+                insights.append(f"High-risk merchants (>1 std dev above average): {len(high_risk_merchants)} merchants")
+                insights.append(f"Low-risk merchants (<1 std dev below average): {len(low_risk_merchants)} merchants")
+                
+                # Top 5 analysis
+                top_5 = data.head(5)
+                insights.append(f"Top 5 highest risk merchants:")
+                for i, (_, merchant) in enumerate(top_5.iterrows(), 1):
+                    insights.append(f"  {i}. {merchant['merchant']}: {merchant['fraud_percentage']:.2f}%")
+                
+                # Risk distribution analysis
+                if len(data) >= 10:
+                    quartiles = data['fraud_percentage'].quantile([0.25, 0.5, 0.75])
+                    insights.append(f"Fraud rate quartiles: Q1={quartiles[0.25]:.2f}%, Q2={quartiles[0.5]:.2f}%, Q3={quartiles[0.75]:.2f}%")
+                    
+                    # Calculate interquartile range
+                    iqr = quartiles[0.75] - quartiles[0.25]
+                    insights.append(f"Interquartile range: {iqr:.2f}% (shows spread of middle 50% of merchants)")
             
-            # Generate summary answer
+            # Generate comprehensive summary answer
             if 'region_type' in data.columns and len(data) == 2:
                 # Cross-border analysis
                 high_value = data[data['region_type'].str.contains('High-Value', case=False, na=False)]
@@ -645,33 +734,78 @@ class FraudAnalysisService:
                     answer = f"Geographic analysis shows that high-value transactions (cross-border proxy) have a {difference:.1f}% higher fraud rate than low-value transactions (domestic proxy). High-value transactions: {high_rate:.2f}% fraud rate, Low-value transactions: {low_rate:.2f}% fraud rate."
                 else:
                     answer = f"Geographic analysis completed. {sql_result.get('description', 'Analysis results available.')}"
+            elif 'time_period' in data.columns:
+                # Enhanced temporal analysis summary
+                if 'period_type' in data.columns:
+                    daily_data = data[data['period_type'] == 'daily']
+                    monthly_data = data[data['period_type'] == 'monthly']
+                    
+                    if not daily_data.empty and not monthly_data.empty:
+                        daily_avg = daily_data['fraud_percentage'].mean()
+                        monthly_avg = monthly_data['fraud_percentage'].mean()
+                        daily_vol = daily_data['fraud_percentage'].std()
+                        monthly_vol = monthly_data['fraud_percentage'].std()
+                        
+                        answer = f"Temporal analysis reveals fraud rate patterns across both daily and monthly periods. Daily fraud rates average {daily_avg:.2f}% with {daily_vol:.2f}% volatility, while monthly rates average {monthly_avg:.2f}% with {monthly_vol:.2f}% volatility. "
+                        
+                        if daily_vol > monthly_vol:
+                            answer += f"Daily patterns show higher volatility ({daily_vol:.2f}%) than monthly patterns ({monthly_vol:.2f}%), indicating more day-to-day variation in fraud rates."
+                        else:
+                            answer += f"Monthly patterns show higher volatility ({monthly_vol:.2f}%) than daily patterns ({daily_vol:.2f}%), suggesting more month-to-month variation in fraud rates."
+                    else:
+                        period_type = "daily" if not daily_data.empty else "monthly"
+                        period_data = daily_data if not daily_data.empty else monthly_data
+                        avg_rate = period_data['fraud_percentage'].mean()
+                        volatility = period_data['fraud_percentage'].std()
+                        trend = "increasing" if period_data['fraud_percentage'].iloc[-1] > period_data['fraud_percentage'].iloc[0] else "decreasing"
+                        
+                        answer = f"Temporal analysis shows {period_type} fraud rates averaging {avg_rate:.2f}% with {volatility:.2f}% volatility. The overall trend is {trend} over the analyzed period."
+                else:
+                    avg_rate = data['fraud_percentage'].mean()
+                    volatility = data['fraud_percentage'].std()
+                    trend = "increasing" if data['fraud_percentage'].iloc[-1] > data['fraud_percentage'].iloc[0] else "decreasing"
+                    
+                    answer = f"Temporal analysis shows fraud rates averaging {avg_rate:.2f}% with {volatility:.2f}% volatility. The overall trend is {trend} over the analyzed period."
+            elif 'merchant' in data.columns:
+                # Enhanced merchant analysis summary
+                top_merchant = data.iloc[0]
+                avg_rate = data['fraud_percentage'].mean()
+                total_merchants = len(data)
+                high_risk_count = len(data[data['fraud_percentage'] > avg_rate + data['fraud_percentage'].std()])
+                
+                answer = f"Merchant analysis across {total_merchants} merchants reveals significant variation in fraud rates. The highest risk merchant is {top_merchant['merchant']} with {top_merchant['fraud_percentage']:.2f}% fraud rate, while the average across all merchants is {avg_rate:.2f}%. "
+                
+                if high_risk_count > 0:
+                    answer += f"{high_risk_count} merchants show high-risk patterns (above 1 standard deviation from average), indicating concentrated fraud risk among specific merchants."
+                else:
+                    answer += "Fraud rates are relatively evenly distributed across merchants, with no extreme outliers identified."
             else:
                 answer = f"Analysis completed successfully. {sql_result.get('description', 'Results show fraud patterns across different categories.')}"
             
-            return {
-                'answer': answer,
-                'status': 'success',
-                'insights': insights,
-                'data_summary': {
-                    'total_records': len(data),
-                    'columns': list(data.columns),
-                    'sample_data': data.head(3).to_dict('records') if len(data) > 0 else []
-                }
-            }
+            return self._format_response(
+                answer=answer,
+                status='success',
+                data=data,
+                handler='ai_sql_generator',
+                question_type=question_type.value,
+                confidence=confidence,
+                metadata=metadata,
+                insights=insights
+            )
             
         except Exception as e:
             self.logger.error(f"Error generating AI response: {e}")
-            return {
-                'answer': f"Analysis completed but encountered an error: {str(e)}",
-                'status': 'partial_success',
-                'insights': []
-            }
+            return self._format_response(
+                answer=f"Analysis completed but encountered an error: {str(e)}",
+                status='partial_success',
+                error=str(e)
+            )
 
     
     def _handle_document_question(self, question: str, question_type: QuestionType,
                                  confidence: float, metadata: Dict) -> Dict[str, Any]:
         """
-        Handle document-related questions using OpenAI-based search with enhanced EEA analysis
+        Handle document-related questions using hybrid FAISS + OpenAI approach
         
         Args:
             question: User's question
@@ -683,25 +817,76 @@ class FraudAnalysisService:
             Response dictionary
         """
         try:
-            if not self.document_index_built:
-                return {
-                    'error': 'Document search not available. Documents not processed.',
-                    'status': 'error'
-                }
+            print(f"\n=== HYBRID DOCUMENT PROCESSING DEBUG ===")
+            print(f"Question: {question}")
+            print(f"Question Type: {question_type.value}")
+            print(f"Confidence: {confidence}")
             
-            # Search documents using OpenAI-based processor with more results for EEA questions
+            if not self.document_index_built:
+                print("❌ Document index not built, processing documents...")
+                if not self._process_documents():
+                    return {
+                        'error': 'Document search not available. Documents not processed.',
+                        'status': 'error'
+                    }
+                print("✅ Document index built successfully")
+            
+            # Check hybrid processor status
+            doc_summary = self.document_processor.get_document_summary()
+            print(f"📊 Document Summary:")
+            print(f"  - Documents loaded: {doc_summary['documents_loaded']}")
+            print(f"  - Document names: {doc_summary['document_names']}")
+            print(f"  - FAISS available: {doc_summary['faiss_available']}")
+            print(f"  - Chunks created: {doc_summary['chunks_created']}")
+            print(f"  - Processing available: {doc_summary['processing_available']}")
+            
+            # Search documents using hybrid approach
             max_results = 10 if any(term in question.lower() for term in ["eea", "european", "europe"]) else 5
-            search_result = self.document_processor.search_documents(question, max_results=max_results)
+            print(f"🔍 Searching with max_results: {max_results}")
+            print(f"🔄 Using hybrid approach: FAISS + OpenAI")
+            
+            search_result = self.document_processor.search_documents(question, max_results=max_results, use_hybrid=True)
+            
+            # Log search result details
+            print(f"📋 Search Result:")
+            print(f"  - Success: {search_result.get('success', False)}")
+            print(f"  - Method used: {search_result.get('method', 'unknown')}")
+            print(f"  - Confidence: {search_result.get('confidence', 'N/A')}")
+            print(f"  - Cost saved: {search_result.get('cost_saved', 'N/A')}")
+            print(f"  - Sources found: {len(search_result.get('sources', []))}")
+            
+            if search_result.get('method') == 'hybrid':
+                print(f"  - FAISS sources: {search_result.get('faiss_sources', 'N/A')}")
+                print(f"  - Enhanced with OpenAI: {search_result.get('enhanced_with_openai', 'N/A')}")
+            
+            # Show cost tracking
+            cost_stats = self.document_processor.get_cost_stats()
+            print(f"💰 Cost Statistics:")
+            print(f"  - Total queries: {cost_stats['total_queries']}")
+            print(f"  - FAISS queries: {cost_stats['faiss_queries']}")
+            print(f"  - OpenAI queries: {cost_stats['openai_queries']}")
+            print(f"  - Hybrid queries: {cost_stats['hybrid_queries']}")
+            print(f"  - Cost savings: {cost_stats['cost_savings_percentage']:.1f}%")
+            print(f"  - Tokens saved: {cost_stats['estimated_tokens_saved']}")
             
             if not search_result.get('success', False):
+                print("❌ Document search failed")
                 return {
                     'error': f"Document search failed: {search_result.get('error', 'Unknown error')}",
                     'status': 'error'
                 }
             
-            # Extract answer and sources from OpenAI response
+            # Extract answer and sources from search result
             answer = search_result.get('answer', 'No answer found')
             sources = search_result.get('sources', [])
+            
+            print(f"📝 Generated Answer:")
+            print(f"  - Length: {len(answer)} characters")
+            print(f"  - Sources: {len(sources)}")
+            if sources:
+                print(f"  - Source documents: {[s.get('document', 'Unknown') for s in sources[:3]]}")
+            
+            print("=== END HYBRID DOCUMENT PROCESSING DEBUG ===\n")
             search_confidence = search_result.get('confidence', 0.8)
             
             # Enhance answer for EEA questions
@@ -714,29 +899,89 @@ class FraudAnalysisService:
                 chart = self._generate_document_chart(question, sources)
             
             # Return the enhanced document processor response
-            response = {
-                'question_type': question_type.value,
-                'answer': answer,
-                'sources': sources,
-                'confidence': min(confidence, search_confidence),
-                'metadata': metadata,
-                'document_search_performed': True,
-                'handler': 'document_processor',
-                'chart_type': chart.get('type') if chart else None,
-                'chart': chart,
-                'fallback_reason': 'No relevant data in transaction database',
-                'document_analysis': True
-            }
-            
-            return response
+            return self._format_response(
+                answer=answer,
+                status='success',
+                handler='document_processor',
+                question_type=question_type.value,
+                confidence=min(confidence, search_confidence),
+                metadata=metadata,
+                sources=sources,
+                chart=chart
+            )
             
         except Exception as e:
             self.logger.error(f"Error handling document question: {e}")
-            return {
-                'error': f'Error handling document question: {str(e)}',
-                'status': 'error'
-            }
+            return self._format_response(
+                answer="I encountered an error while processing your question.",
+                status='error',
+                error=f'Error handling document question: {str(e)}'
+            )
     
+    def _format_response(self, answer: str, status: str, data: Any = None, 
+                        chart: Dict = None, handler: str = None, question_type: str = None,
+                        confidence: float = None, metadata: Dict = None, 
+                        insights: List = None, sources: List = None, 
+                        error: str = None) -> Dict[str, Any]:
+        """
+        Format API response in a classic JSON structure
+        
+        Args:
+            answer: The main answer text
+            status: Response status (success, error, partial_success)
+            data: Any data returned
+            chart: Chart configuration if applicable
+            handler: Which handler processed the request
+            question_type: Type of question asked
+            confidence: Confidence score
+            metadata: Additional metadata
+            insights: List of insights
+            sources: Document sources
+            error: Error message if any
+            
+        Returns:
+            Formatted response dictionary
+        """
+        response = {
+            "success": status == "success",
+            "status": status,
+            "data": {
+                "answer": answer,
+                "question_type": question_type,
+                "confidence": confidence
+            }
+        }
+        
+        # Add optional fields if present
+        if data is not None:
+            # Convert DataFrame to serializable format
+            if hasattr(data, 'to_dict'):
+                # It's a pandas DataFrame
+                response["data"]["analysis_data"] = data.to_dict('records')
+            else:
+                # It's already serializable
+                response["data"]["analysis_data"] = data
+            
+        if chart is not None:
+            response["data"]["chart"] = chart
+            
+        if insights:
+            response["data"]["insights"] = insights
+            
+        if sources:
+            response["data"]["sources"] = sources
+            
+        if handler:
+            response["data"]["handler"] = handler
+            
+        if metadata:
+            response["data"]["metadata"] = metadata
+            
+        if error:
+            response["data"]["error"] = error
+            
+        return response
+
     def _enhance_eea_response(self, question: str, answer: str, sources: List[Dict]) -> str:
         """
         Enhance response for EEA-specific questions

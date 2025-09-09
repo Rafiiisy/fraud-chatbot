@@ -37,6 +37,9 @@ faiss-cpu>=1.7.4
 # OpenAI integration for complex analysis and embeddings
 openai>=1.0.0
 
+# BM25 for keyword prefiltering (lightweight)
+rank-bm25>=0.2.2
+
 # Note: Using OpenAI embeddings instead of sentence-transformers for faster builds
 
 # Additional dependencies for document processing (Hybrid approach)

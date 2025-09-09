@@ -70,11 +70,6 @@ class Sidebar:
             
             st.markdown("---")
             
-            # Chat History Status
-            self._render_chat_history_status()
-            
-            st.markdown("---")
-            
             # Sample Questions
             st.header("📋 Sample Questions")
             st.markdown("Click any question below to try it out:")
@@ -98,43 +93,14 @@ class Sidebar:
             - **Value Analysis**: Fraud value calculations
             """)
             
-            # Quick Stats
-            if status.get("initialized", False):
-                st.markdown("---")
-                st.header("📊 Quick Stats")
-                if 'data_summary' in status:
-                    summary = status['data_summary']
-                    if 'total_records' in summary:
-                        st.metric("Total Records", f"{summary['total_records']:,}")
-                    if 'date_range' in summary:
-                        st.metric("Date Range", summary['date_range'])
+            # # Quick Stats
+            # if status.get("initialized", False):
+            #     st.markdown("---")
+            #     st.header("📊 Quick Stats")
+            #     if 'data_summary' in status:
+            #         summary = status['data_summary']
+            #         if 'total_records' in summary:
+            #             st.metric("Total Records", f"{summary['total_records']:,}")
+            #         if 'date_range' in summary:
+            #             st.metric("Date Range", summary['date_range'])
     
-    def _render_chat_history_status(self):
-        """Render chat history status with TTL information"""
-        st.header("💬 Chat History")
-        
-        # Get current chat history count
-        chat_count = len(st.session_state.get('chat_history', []))
-        
-        if chat_count > 0:
-            st.info(f"📚 {chat_count} messages in current session")
-            
-            # Show TTL information
-            if not self.storage_manager.is_expired():
-                ttl_display = self.storage_manager.get_ttl_display()
-                st.success(f"⏰ History expires in: {ttl_display}")
-            else:
-                st.warning("⏰ Chat history has expired")
-            
-            # Show storage info
-            if 'persistent_chat_history' in st.session_state:
-                stored_count = len(st.session_state.persistent_chat_history.get('data', []))
-                st.caption(f"💾 {stored_count} messages saved to storage")
-            
-            # Clear history button
-            if st.button("🗑️ Clear History", help="Clear all chat history"):
-                st.session_state.chat_history = []
-                self.storage_manager.clear_expired_history()
-                st.rerun()
-        else:
-            st.caption("No messages yet. Start a conversation!")

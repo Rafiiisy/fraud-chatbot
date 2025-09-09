@@ -21,7 +21,7 @@ from pathlib import Path
 backend_path = Path(__file__).parent.parent
 sys.path.append(str(backend_path))
 
-from core.fraud_predictor import FraudPredictor
+from core.ai.fraud_predictor import FraudPredictor
 from data.api_database_manager import APIDatabaseManager
 
 logger = logging.getLogger(__name__)

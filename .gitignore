@@ -248,6 +248,8 @@ test_outputs/
 test_results/
 test_outputs/
 tests/
+debugs/
+evaluate/
 test_*
 demo_*
 *_demo.py

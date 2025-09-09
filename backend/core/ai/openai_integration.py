@@ -201,6 +201,37 @@ Enhanced Response:
         except Exception as e:
             self.logger.error(f"Error making API call: {e}")
             return None
+    
+    def _make_embeddings_api_call(self, texts: List[str]) -> Optional[List[List[float]]]:
+        """Make embeddings API call to OpenAI"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": "text-embedding-3-small",
+                "input": texts
+            }
+            
+            response = requests.post(
+                "https://api.openai.com/v1/embeddings",
+                headers=headers,
+                json=data,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return [item['embedding'] for item in result['data']]
+            else:
+                self.logger.error(f"Embeddings API call failed: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error making embeddings API call: {e}")
+            return None
 
 # Test if this works
 if __name__ == "__main__":

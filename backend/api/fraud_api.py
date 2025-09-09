@@ -33,12 +33,33 @@ def health_check():
     """Health check endpoint"""
     try:
         if service is None:
-            return jsonify({'status': 'not_initialized', 'message': 'Service not initialized'}), 503
+            return jsonify({
+                'success': False,
+                'status': 'error',
+                'data': {
+                    'answer': 'Service not initialized',
+                    'error': 'Service not initialized'
+                }
+            }), 503
         
         status = service.get_service_status()
-        return jsonify({'status': 'healthy', 'service_status': status}), 200
+        return jsonify({
+            'success': True,
+            'status': 'healthy',
+            'data': {
+                'answer': 'Service is healthy',
+                'service_status': status
+            }
+        }), 200
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'status': 'error',
+            'data': {
+                'answer': 'Health check failed',
+                'error': str(e)
+            }
+        }), 500
 
 @app.route('/question', methods=['POST'])
 def process_question():
@@ -49,11 +70,25 @@ def process_question():
         
         data = request.get_json()
         if not data or 'question' not in data:
-            return jsonify({'error': 'Question is required'}), 400
+            return jsonify({
+                'success': False,
+                'status': 'error',
+                'data': {
+                    'answer': 'Please provide a question.',
+                    'error': 'Question is required'
+                }
+            }), 400
         
         question = data['question']
         if not question.strip():
-            return jsonify({'error': 'Question cannot be empty'}), 400
+            return jsonify({
+                'success': False,
+                'status': 'error',
+                'data': {
+                    'answer': 'Please provide a question.',
+                    'error': 'Question cannot be empty'
+                }
+            }), 400
         
         # Process the question
         response = service.process_question_sync(question)
@@ -62,7 +97,14 @@ def process_question():
         
     except Exception as e:
         logging.error(f"Error processing question: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'success': False,
+            'status': 'error',
+            'data': {
+                'answer': 'I encountered an error while processing your question.',
+                'error': str(e)
+            }
+        }), 500
 
 @app.route('/suggestions', methods=['GET'])
 def get_suggestions():

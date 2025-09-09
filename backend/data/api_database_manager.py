@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any
 import logging
 import os
-from core.database_api_client import DatabaseAPIClient
+from core.data.database_api_client import DatabaseAPIClient
 
 class APIDatabaseManager:
     """

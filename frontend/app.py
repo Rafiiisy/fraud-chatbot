@@ -211,7 +211,7 @@ class FraudChatbotApp:
                 has_displayed_charts = len(st.session_state.displayed_charts) > 0
                 
                 if latest_has_chart or has_displayed_charts:
-                    st.markdown("---")
+                    # st.markdown("---")
                     
                     # Always show generate button if there's chart data
                     col1, col2 = st.columns([1, 1])
@@ -248,7 +248,7 @@ class FraudChatbotApp:
             
             # Display charts that user has requested (only when not processing)
             if not latest_processing and st.session_state.displayed_charts:
-                st.markdown("---")
+                # st.markdown("---")
                 st.subheader("📈 Visualizations")
                 
                 for response_id in st.session_state.displayed_charts:

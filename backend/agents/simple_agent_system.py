@@ -13,7 +13,7 @@ from dataclasses import dataclass
 backend_path = Path(__file__).parent.parent
 sys.path.append(str(backend_path))
 
-from core.openai_integration import OpenAIIntegration
+from core.ai.openai_integration import OpenAIIntegration
 
 
 @dataclass

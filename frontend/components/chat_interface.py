@@ -304,18 +304,21 @@ class ChatInterface:
     def _format_backend_response(self, backend_response):
         """Convert backend response format to frontend format"""
         # Extract key information from backend response
-        question_type = backend_response.get('question_type', 'general')
+        data = backend_response.get('data', {})
+        question_type = data.get('question_type', backend_response.get('question_type', 'general'))
         
         # For document-based responses, use 'answer' instead of 'summary'
-        if 'answer' in backend_response:
+        if 'answer' in data:
+            explanation = data.get('answer', 'No answer available')
+        elif 'answer' in backend_response:
             explanation = backend_response.get('answer', 'No answer available')
         else:
             explanation = backend_response.get('summary', 'No summary available')
         
-        insights = backend_response.get('insights', [])
-        statistics = backend_response.get('statistics', {})
-        data = backend_response.get('data', [])
-        chart_data = backend_response.get('chart_data', {})
+        insights = data.get('insights', backend_response.get('insights', []))
+        statistics = data.get('statistics', backend_response.get('statistics', {}))
+        analysis_data = data.get('analysis_data', backend_response.get('data', []))
+        chart_data = data.get('chart', backend_response.get('chart_data', {}))
         
         # Create formatted response
         formatted_response = {
@@ -324,20 +327,32 @@ class ChatInterface:
             "explanation": explanation,
             "content": insights,
             "metrics": self._format_statistics(statistics),
-            "data": self._format_data(data),
-            "chart": self._create_chart_from_data(data, chart_data, question_type),
-            "sources": backend_response.get('sources', []),
-            "sql_query": backend_response.get('sql_query', ''),
-            "confidence": backend_response.get('confidence', 0),
-            "metadata": backend_response.get('metadata', {})
+            "data": self._format_data(analysis_data),
+            "chart": self._create_chart_from_data(analysis_data, chart_data, question_type),
+            "sources": data.get('sources', backend_response.get('sources', [])),
+            "sql_query": data.get('sql_query', backend_response.get('sql_query', '')),
+            "confidence": data.get('confidence', backend_response.get('confidence', 0)),
+            "metadata": data.get('metadata', backend_response.get('metadata', {}))
         }
         
         # Handle chart data from backend if available
-        if 'chart' in backend_response and backend_response['chart']:
+        if 'chart' in data and data['chart']:
             print(f"=== CHART DEBUG ===")
+            print(f"Backend chart data: {data['chart']}")
+            chart = self._create_chart_from_data(
+                analysis_data, 
+                data['chart'], 
+                question_type
+            )
+            print(f"Created chart: {chart is not None}")
+            if chart:
+                print(f"Chart type: {type(chart)}")
+            formatted_response["chart"] = chart
+        elif 'chart' in backend_response and backend_response['chart']:
+            print(f"=== CHART DEBUG (fallback) ===")
             print(f"Backend chart data: {backend_response['chart']}")
             chart = self._create_chart_from_data(
-                data, 
+                analysis_data, 
                 backend_response['chart'], 
                 question_type
             )
@@ -655,7 +670,12 @@ class ChatInterface:
     def render_chat_container(self):
         """Render the scrollable chat container (legacy method)"""
         chat_content = self.get_chat_html()
-        st.markdown(chat_content, unsafe_allow_html=True)
+        # Use st.html instead of st.markdown to prevent hyperlink conversion
+        try:
+            st.html(chat_content)
+        except:
+            # Fallback to markdown if st.html is not available
+            st.markdown(chat_content, unsafe_allow_html=True)
     
     def get_response_html(self, response_data):
         """Convert response data to HTML string"""
@@ -712,48 +732,122 @@ class ChatInterface:
         return 'chart' in response_data and response_data['chart'] is not None
     
     def _markdown_to_html(self, markdown_text):
-        """Convert basic markdown to HTML"""
+        """Convert basic markdown to HTML with improved formatting"""
         if not markdown_text:
             return ""
         
-        # Convert markdown to HTML
+        # Remove common status prefixes
+        import re
         html = markdown_text
         
+        # Remove status prefixes like "Analysis completed successfully"
+        status_prefixes = [
+            r'^Analysis completed successfully\.?\s*',
+            r'^Processing completed\.?\s*',
+            r'^Analysis finished\.?\s*',
+            r'^Results generated\.?\s*'
+        ]
+        
+        for prefix in status_prefixes:
+            html = re.sub(prefix, '', html, flags=re.IGNORECASE)
+        
         # Convert **bold** to <strong>bold</strong>
-        import re
         html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
         
         # Convert *italic* to <em>italic</em>
         html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
         
-        # Convert bullet points to HTML list
+        # Convert section headers (Methodology:, Key Insights:, etc.)
+        html = re.sub(r'^(\w+[^:]*:)\s*$', r'<h4 style="color: #4a9eff; margin: 1rem 0 0.5rem 0; font-size: 1.1rem;">\1</h4>', html, flags=re.MULTILINE)
+        
+        # Process lines for lists and formatting
         lines = html.split('\n')
-        in_list = False
+        in_ul = False
+        in_ol = False
         result_lines = []
         
         for line in lines:
-            if line.strip().startswith('- '):
-                if not in_list:
-                    result_lines.append('<ul>')
-                    in_list = True
+            stripped = line.strip()
+            
+            # Handle bullet points (- item)
+            if stripped.startswith('- '):
+                if not in_ul:
+                    if in_ol:
+                        result_lines.append('</ol>')
+                        in_ol = False
+                    result_lines.append('<ul style="margin: 0.5rem 0; padding-left: 1.5rem;">')
+                    in_ul = True
                 # Remove the - and add list item
-                content = line.strip()[2:].replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-                result_lines.append(f'<li>{content}</li>')
+                content = stripped[2:].strip()
+                result_lines.append(f'<li style="margin: 0.25rem 0;">{content}</li>')
+            
+            # Handle numbered lists (1) item, 2) item, etc.)
+            elif re.match(r'^\d+\)\s+', stripped):
+                if not in_ol:
+                    if in_ul:
+                        result_lines.append('</ul>')
+                        in_ul = False
+                    result_lines.append('<ol style="margin: 0.5rem 0; padding-left: 1.5rem;">')
+                    in_ol = True
+                # Remove the number) and add list item
+                content = re.sub(r'^\d+\)\s+', '', stripped).strip()
+                result_lines.append(f'<li style="margin: 0.25rem 0;">{content}</li>')
+            
+            # Handle regular text
             else:
-                if in_list:
+                if in_ul:
                     result_lines.append('</ul>')
-                    in_list = False
-                # Escape HTML characters for regular text
-                content = line.replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-                result_lines.append(content)
+                    in_ul = False
+                if in_ol:
+                    result_lines.append('</ol>')
+                    in_ol = False
+                
+                if stripped:  # Only add non-empty lines
+                    # Don't escape HTML tags that we want to preserve
+                    content = self._preserve_safe_html(line)
+                    result_lines.append(content)
         
-        if in_list:
+        # Close any open lists
+        if in_ul:
             result_lines.append('</ul>')
+        if in_ol:
+            result_lines.append('</ol>')
         
         # Join lines and convert line breaks to <br>
         html = '<br>'.join(result_lines)
         
         return html
+    
+    def _preserve_safe_html(self, text):
+        """Preserve safe HTML tags while escaping dangerous ones"""
+        import re
+        
+        # List of safe HTML tags to preserve (including h4 for section headers)
+        safe_tags = ['strong', 'em', 'b', 'i', 'u', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+        
+        # First, temporarily replace safe tags with placeholders
+        tag_placeholders = {}
+        placeholder_counter = 0
+        
+        for tag in safe_tags:
+            # Match opening and closing tags
+            pattern = rf'<{tag}[^>]*>.*?</{tag}>|<{tag}[^>]*/?>'
+            matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
+            
+            for match in matches:
+                placeholder = f"__SAFE_TAG_{placeholder_counter}__"
+                tag_placeholders[placeholder] = match.group()
+                text = text.replace(match.group(), placeholder, 1)
+                placeholder_counter += 1
+        
+        # Escape remaining HTML characters
+        text = text.replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
+        
+        # Restore safe tags
+        for placeholder, original_tag in tag_placeholders.items():
+            text = text.replace(placeholder, original_tag)
+        
+        return text
     
     def render_response_inline(self, response_data):
         """Render response content inline within chat container"""

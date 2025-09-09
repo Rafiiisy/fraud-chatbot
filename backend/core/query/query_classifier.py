@@ -23,10 +23,17 @@ from data.api_database_manager import APIDatabaseManager
 
 # Import OpenAI integration
 try:
-    from .openai_integration import OpenAIIntegration, QuestionType as LLMQuestionType
+    from ..ai.openai_integration import OpenAIIntegration, QuestionType as LLMQuestionType
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+
+# Import dynamic query analyzer
+try:
+    from .dynamic_query_analyzer import DynamicQueryAnalyzer
+    DYNAMIC_ANALYZER_AVAILABLE = True
+except ImportError:
+    DYNAMIC_ANALYZER_AVAILABLE = False
 
 
 class QueryClassifier:
@@ -52,7 +59,14 @@ class QueryClassifier:
                 self.logger = logging.getLogger(__name__)
                 self.logger.warning(f"Failed to initialize OpenAI integration: {e}")
                 self.use_llm = False
-        else:
+        
+        # Initialize dynamic query analyzer
+        self.query_analyzer = None
+        if DYNAMIC_ANALYZER_AVAILABLE:
+            self.query_analyzer = DynamicQueryAnalyzer()
+        
+        # Initialize logger if not already done
+        if not hasattr(self, 'logger'):
             self.logger = logging.getLogger(__name__)
         
         # Initialize database API manager for data availability checks
@@ -144,7 +158,47 @@ class QueryClassifier:
         """
         # Note: Data availability check will be done after initial classification
         
-        # Try LLM classification first if available
+        # Try dynamic query analyzer first if available
+        if self.query_analyzer:
+            try:
+                analysis = self.query_analyzer.analyze_query(query)
+                question_type_str = self.query_analyzer.get_question_type(analysis)
+                confidence = self.query_analyzer.get_confidence(analysis)
+                
+                # Convert string to enum
+                question_type = self._convert_string_to_question_type(question_type_str)
+                
+                
+                # Check data availability for value analysis questions with time references
+                if (question_type == QuestionType.VALUE_ANALYSIS and 
+                    self.db_available and self.db_manager):
+                    
+                    time_reference = self._extract_time_reference(query.lower())
+                    if time_reference:
+                        data_available = self._check_data_availability(time_reference)
+                        if not data_available:
+                            # Route value analysis questions about missing time periods to forecasting
+                            self.logger.info(f"Dynamic analyzer classified value analysis with missing data for {time_reference}, routing to forecasting")
+                            return QuestionType.FORECASTING, 0.8, {
+                                'method': 'dynamic_value_analysis_to_forecasting',
+                                'original_type': 'value_analysis',
+                                'analysis': analysis,
+                                'time_reference': time_reference,
+                                'data_available': False,
+                                'reason': 'Dynamic analyzer classified value analysis question about missing time period, using forecasting to predict'
+                            }
+                
+                return question_type, confidence, {
+                    'method': 'dynamic_analyzer',
+                    'analysis': analysis,
+                    'confidence_threshold': 0.7,
+                    'is_high_confidence': confidence >= 0.7
+                }
+                
+            except Exception as e:
+                self.logger.warning(f"Dynamic query analyzer failed: {e}, falling back to LLM")
+        
+        # Try LLM classification as fallback if available
         if self.use_llm:
             try:
                 llm_type, llm_confidence, llm_metadata = self.openai.classify_query_with_llm(query)
@@ -232,6 +286,29 @@ class QueryClassifier:
                     }
         
         return question_type, confidence, metadata
+    
+    def _convert_string_to_question_type(self, question_type_str: str) -> QuestionType:
+        """
+        Convert string question type from dynamic analyzer to enum
+        
+        Args:
+            question_type_str: String question type from analyzer
+            
+        Returns:
+            QuestionType enum value
+        """
+        type_mapping = {
+            'temporal_analysis': QuestionType.TEMPORAL_ANALYSIS,
+            'merchant_analysis': QuestionType.MERCHANT_ANALYSIS,
+            'fraud_methods': QuestionType.FRAUD_METHODS,
+            'system_components': QuestionType.SYSTEM_COMPONENTS,
+            'geographic_analysis': QuestionType.GEOGRAPHIC_ANALYSIS,
+            'value_analysis': QuestionType.VALUE_ANALYSIS,
+            'forecasting': QuestionType.FORECASTING,
+            'document_analysis': QuestionType.FRAUD_METHODS  # Route to document processor
+        }
+        
+        return type_mapping.get(question_type_str.lower(), QuestionType.VALUE_ANALYSIS)
     
     def _convert_llm_question_type(self, llm_type) -> QuestionType:
         """Convert LLM question type to our enum"""
