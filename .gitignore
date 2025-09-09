@@ -1,0 +1,319 @@
+# Fraud Detection Chatbot - Git Ignore File
+# ==========================================
+
+# Python
+# -------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# -----------
+*.manifest
+*.spec
+
+# Installer logs
+# --------------
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+# ----------------------------
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+# ------------
+*.mo
+*.pot
+
+# Django stuff:
+# -------------
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+# ------------
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+# -------------
+.scrapy
+
+# Sphinx documentation
+# --------------------
+docs/_build/
+
+# PyBuilder
+# ---------
+.pybuilder/
+target/
+
+# Jupyter Notebook
+# ----------------
+.ipynb_checkpoints
+
+# IPython
+# -------
+profile_default/
+ipython_config.py
+
+# pyenv
+# -----
+.python-version
+
+# pipenv
+# ------
+Pipfile.lock
+
+# poetry
+# ------
+poetry.lock
+
+# pdm
+# ----
+.pdm.toml
+
+# PEP 582
+# -------
+__pypackages__/
+
+# Celery stuff
+# ------------
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+# ---------------------
+*.sage.py
+
+# Environments
+# ------------
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+# -----------------------
+.spyderproject
+.spyproject
+
+# Rope project settings
+# ---------------------
+.ropeproject
+
+# mkdocs documentation
+# --------------------
+/site
+
+# mypy
+# ----
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+# -----------------
+.pyre/
+
+# pytype static type analyzer
+# ---------------------------
+.pytype/
+
+# Cython debug symbols
+# --------------------
+cython_debug/
+
+# PyCharm
+# -------
+.idea/
+
+# VS Code
+# -------
+.vscode/
+
+# Docker
+# ------
+.dockerignore
+docker-compose.override.yml
+
+# Database files
+# --------------
+*.db
+*.sqlite
+*.sqlite3
+fraud_data.db
+*.db-journal
+
+# Logs
+# ----
+*.log
+logs/
+log/
+
+# OS generated files
+# ------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+# -------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Temporary files
+# ---------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Project specific
+# ----------------
+# Environment files
+backend/env
+.env
+.env.local
+.env.development
+.env.production
+
+# Data files (keep structure but ignore large files)
+dataset/archive/*.csv
+!dataset/archive/.gitkeep
+
+# Model files
+models/
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+
+# # Jupyter notebook outputs
+# notebooks/*.ipynb
+# !notebooks/*.template.ipynb
+
+# Test outputs
+test_outputs/
+test_results/
+test_outputs/
+tests/
+test_*
+demo_*
+*_demo.py
+
+# Coverage reports
+htmlcov/
+.coverage
+
+# Documentation builds
+docs/_build/
+docs/build/
+
+# IDE specific
+# ------------
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries
+.idea/shelf
+
+# Node.js (if any frontend dependencies)
+# --------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Backup files
+# ------------
+*.bak
+*.backup
+*.old
+
+# Archive files
+# -------------
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Large data files
+# ----------------
+*.csv
+*.json
+*.parquet
+*.feather
+*.pickle
+
+# Keep important structure files
+# ------------------------------
+!dataset/archive/.gitkeep
+!notebooks/.gitkeep
+!models/.gitkeep
+!logs/.gitkeep
+
+# Keep configuration files
+# ------------------------
+!docker-compose*.yml
+!Dockerfile*
+!requirements*.txt
+!*.md
+!*.bat
+!*.sh
+
+# MD's
+# ------------------------
+MDs/

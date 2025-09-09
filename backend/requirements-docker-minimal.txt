@@ -1,0 +1,36 @@
+# Minimal Docker requirements for fraud detection chatbot backend
+# Core data processing
+pandas>=2.0.3
+numpy>=1.24.3
+
+# Time series forecasting
+statsmodels>=0.14.0
+
+# PDF processing
+PyPDF2>=3.0.1
+pdfplumber>=0.9.0
+
+# Visualization
+plotly>=5.15.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# Web framework
+flask>=2.3.0
+gunicorn>=21.2.0
+
+# Utilities
+requests>=2.31.0
+
+# API integration
+urllib3>=1.26.0
+
+# AI Agent Libraries (simplified for Python 3.9 compatibility)
+# Note: Full agent libraries require Python 3.10+
+# Using basic OpenAI integration instead
+
+# Additional dependencies for document processing (OpenAI-based approach)
+# Note: Using OpenAI for embeddings instead of sentence-transformers
+# Note: Using OpenAI for document search instead of FAISS
+# Note: Using OpenAI for analysis instead of scikit-learn
