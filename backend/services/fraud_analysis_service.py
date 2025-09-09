@@ -13,8 +13,9 @@ import logging
 backend_path = Path(__file__).parent.parent
 sys.path.append(str(backend_path))
 
-from core.sql_generator import SQLGenerator, QuestionType
-from core.simple_document_processor import SimpleDocumentProcessor
+from core.sql_generator import QuestionType
+from core.ai_sql_generator import AISQLGenerator
+from core.hybrid_document_processor import HybridDocumentProcessor
 from core.chart_generator import ChartGenerator
 from core.response_generator import ResponseGenerator
 from core.query_classifier import QueryClassifier
@@ -32,8 +33,8 @@ class FraudAnalysisService:
         self.data_dir = data_dir
         
         # Initialize components with LLM integration
-        self.sql_generator = SQLGenerator()
-        self.document_processor = SimpleDocumentProcessor(data_dir)
+        self.ai_sql_generator = AISQLGenerator()
+        self.document_processor = HybridDocumentProcessor(data_dir, use_faiss=True)
         self.chart_generator = ChartGenerator()
         self.response_generator = ResponseGenerator()
         self.query_classifier = QueryClassifier(use_llm=True)
@@ -166,8 +167,8 @@ class FraudAnalysisService:
                 self.logger.info(f"Routing question to AI agents")
                 return await self._handle_question_with_agents(question, question_type, confidence, metadata)
             elif handler_info['handler'] == 'sql_generator':
-                self.logger.info(f"Routing question to SQL generator")
-                return self._handle_database_question(question, question_type, confidence, metadata)
+                self.logger.info(f"Routing question to AI SQL generator")
+                return self._handle_ai_sql_question(question, question_type, confidence, metadata)
             elif handler_info['handler'] == 'document_processor':
                 self.logger.info(f"Routing question to document processor")
                 return self._handle_document_question(question, question_type, confidence, metadata)
@@ -208,13 +209,13 @@ class FraudAnalysisService:
             if question_type in [QuestionType.MERCHANT_ANALYSIS, QuestionType.TEMPORAL_ANALYSIS, 
                                QuestionType.GEOGRAPHIC_ANALYSIS, QuestionType.VALUE_ANALYSIS]:
                 try:
-                    # Generate and execute SQL query
-                    sql_info = self.sql_generator.generate_sql(question, question_type)
-                    if self.sql_generator.validate_sql(sql_info['sql']):
-                        success, data, error = self.database_manager.execute_query(sql_info['sql'])
+                    # Generate and execute SQL query using AI SQL generator
+                    sql_result = self.ai_sql_generator.generate_sql(question)
+                    if sql_result.get('success', False):
+                        success, data, error = self.database_manager.execute_query(sql_result['sql'])
                         if success and data is not None:
                             context_data['sql_data'] = data
-                            context_data['sql_query'] = sql_info['sql']
+                            context_data['sql_query'] = sql_result['sql']
                 except Exception as e:
                     self.logger.warning(f"Failed to get SQL data: {e}")
             
@@ -234,11 +235,11 @@ class FraudAnalysisService:
             )
             
             if not agent_result.get('success', False):
-                # Fallback to traditional handlers
-                self.logger.warning("Agent analysis failed, falling back to traditional handlers")
+                # Fallback to AI SQL generator for database questions
+                self.logger.warning("Agent analysis failed, falling back to AI SQL generator")
                 if question_type in [QuestionType.MERCHANT_ANALYSIS, QuestionType.TEMPORAL_ANALYSIS, 
                                    QuestionType.GEOGRAPHIC_ANALYSIS, QuestionType.VALUE_ANALYSIS]:
-                    return self._handle_database_question(question, question_type, confidence, metadata)
+                    return self._handle_ai_sql_question(question, question_type, confidence, metadata)
                 else:
                     return self._handle_document_question(question, question_type, confidence, metadata)
             
@@ -287,10 +288,10 @@ class FraudAnalysisService:
             
         except Exception as e:
             self.logger.error(f"Error in agent-based question handling: {e}")
-            # Fallback to traditional handlers
+            # Fallback to AI SQL generator for database questions
             if question_type in [QuestionType.MERCHANT_ANALYSIS, QuestionType.TEMPORAL_ANALYSIS, 
                                QuestionType.GEOGRAPHIC_ANALYSIS, QuestionType.VALUE_ANALYSIS]:
-                return self._handle_database_question(question, question_type, confidence, metadata)
+                return self._handle_ai_sql_question(question, question_type, confidence, metadata)
             else:
                 return self._handle_document_question(question, question_type, confidence, metadata)
     
@@ -325,8 +326,9 @@ class FraudAnalysisService:
                 self.logger.info(f"Routing forecasting question to forecasting agent")
                 return self._handle_forecasting_question(question, question_type, confidence, metadata)
             elif handler_info['handler'] == 'sql_generator':
-                self.logger.info(f"Routing question to SQL generator")
-                return self._handle_database_question(question, question_type, confidence, metadata)
+                # Use AI SQL generator for all database questions
+                self.logger.info(f"Routing question to AI SQL generator")
+                return self._handle_ai_sql_question(question, question_type, confidence, metadata)
             elif handler_info['handler'] == 'document_processor':
                 self.logger.info(f"Routing question to document processor")
                 return self._handle_document_question(question, question_type, confidence, metadata)
@@ -343,10 +345,52 @@ class FraudAnalysisService:
                 'status': 'error'
             }
     
-    def _handle_database_question(self, question: str, question_type: QuestionType, 
-                                 confidence: float, metadata: Dict) -> Dict[str, Any]:
+    
+    def _should_fallback_to_documents(self, sql_result: Dict, question: str, question_type: QuestionType) -> bool:
         """
-        Handle database-related questions
+        Determine if a failed SQL query should fallback to document processing
+        
+        Args:
+            sql_result: Result from AI SQL generator
+            question: User's question
+            question_type: Type of question
+            
+        Returns:
+            True if should fallback to documents, False otherwise
+        """
+        # Check for missing data scenarios that might be in documents
+        if "error" in sql_result:
+            error = sql_result["error"].lower()
+            
+            # EEA/European data questions
+            if any(term in error for term in ["eea", "europe", "european", "international", "cross-border"]):
+                return True
+            
+            # 2023/2024 data questions (recent reports)
+            if any(term in error for term in ["2023", "2024", "recent"]):
+                return True
+        
+        # Regulatory/industry questions that are better answered by documents
+        if question_type in [QuestionType.SYSTEM_COMPONENTS, QuestionType.FRAUD_METHODS]:
+            return True
+        
+        # Check question content for document-relevant terms
+        question_lower = question.lower()
+        document_terms = [
+            "eea", "european", "europe", "regulatory", "report", "study", "analysis",
+            "industry", "standards", "guidelines", "recommendations", "best practices",
+            "2023", "2024", "recent", "latest", "current"
+        ]
+        
+        if any(term in question_lower for term in document_terms):
+            return True
+        
+        return False
+
+    def _handle_ai_sql_question(self, question: str, question_type: QuestionType, 
+                               confidence: float, metadata: Dict) -> Dict[str, Any]:
+        """
+        Handle questions using the AI SQL generator with smart document fallback
         
         Args:
             question: User's question
@@ -358,69 +402,276 @@ class FraudAnalysisService:
             Response dictionary
         """
         try:
-            print(f"\n=== FRAUD ANALYSIS SERVICE DEBUG ===")
+            print(f"\n=== AI SQL GENERATOR DEBUG ===")
             print(f"Question: {question}")
             print(f"Question Type: {question_type}")
             print(f"Confidence: {confidence}")
             print(f"Metadata: {metadata}")
             
-            # Generate SQL query
-            sql_info = self.sql_generator.generate_sql(question, question_type)
-            print(f"SQL Info: {sql_info}")
+            # Generate SQL using AI SQL generator
+            sql_result = self.ai_sql_generator.generate_sql(question)
+            print(f"AI SQL Result: {sql_result}")
             
-            # Validate SQL
-            if not self.sql_generator.validate_sql(sql_info['sql']):
-                print("SQL validation failed!")
-                return {
-                    'error': 'Generated SQL query failed validation',
-                    'status': 'error'
-                }
+            if not sql_result.get("success", False):
+                # Check if this should fallback to document processing
+                if self._should_fallback_to_documents(sql_result, question, question_type):
+                    self.logger.info("AI SQL found no data, falling back to document processing")
+                    print("=== FALLING BACK TO DOCUMENT PROCESSING ===")
+                    return self._handle_document_question(question, question_type, confidence, metadata)
+                else:
+                    # Handle other SQL generation failures
+                    return {
+                        'answer': f"I understand you're asking about {question}, but the current dataset only contains data from 2019-2020. {sql_result.get('suggestion', '')}",
+                        'status': 'partial_success',
+                        'handler': 'ai_sql_generator',
+                        'error': sql_result.get('error'),
+                        'suggestion': sql_result.get('suggestion'),
+                        'fallback_question': sql_result.get('fallback_question'),
+                        'available_data': sql_result.get('available_data')
+                    }
             
-            print("SQL validation passed, executing query...")
-            
-            # Execute query
-            success, data, error = self.database_manager.execute_query(sql_info['sql'])
+            # Execute the generated SQL
+            success, data, error = self.database_manager.execute_query(sql_result['sql'])
             if not success:
                 print(f"Database query failed: {error}")
                 return {
                     'error': f'Database query failed: {error}',
-                    'status': 'error'
+                    'status': 'error',
+                    'handler': 'ai_sql_generator'
                 }
             
             print(f"Database query successful, data shape: {data.shape if data is not None else 'None'}")
-            print("=== END FRAUD ANALYSIS SERVICE DEBUG ===\n")
+            print("=== END AI SQL GENERATOR DEBUG ===\n")
             
             # Generate chart
             chart = None
             if data is not None and not data.empty:
-                chart = self._generate_chart(question_type, data, sql_info)
+                chart = self._generate_ai_chart(question_type, data, sql_result)
             
-            # Generate response
-            response = self.response_generator.generate_response(
-                question, question_type.value, data, None, sql_info
-            )
+            # Generate response using AI SQL generator insights
+            response = self._generate_ai_response(question, question_type, data, sql_result)
             
             # Add chart and metadata
             response['chart'] = chart
-            response['sql_query'] = sql_info['sql']
+            response['sql_query'] = sql_result['sql']
             response['confidence'] = confidence
             response['metadata'] = metadata
-            response['handler'] = 'sql_generator'
-            response['chart_type'] = self.query_classifier.get_handler_info(question_type, metadata).get('chart_type')
+            response['handler'] = 'ai_sql_generator'
+            response['ai_generated'] = True
+            response['description'] = sql_result.get('description', 'AI-generated analysis')
+            
+            if 'adaptation_note' in sql_result:
+                response['adaptation_note'] = sql_result['adaptation_note']
             
             return response
             
         except Exception as e:
-            self.logger.error(f"Error handling database question: {e}")
+            self.logger.error(f"Error handling AI SQL question: {e}")
             return {
-                'error': f'Error handling database question: {str(e)}',
-                'status': 'error'
+                'error': f'Error handling AI SQL question: {str(e)}',
+                'status': 'error',
+                'handler': 'ai_sql_generator'
             }
+    
+    def _generate_ai_chart(self, question_type: QuestionType, data: pd.DataFrame, 
+                          sql_result: Dict) -> Optional[Dict[str, Any]]:
+        """
+        Generate appropriate chart for AI SQL generator results
+        
+        Args:
+            question_type: Type of question
+            data: DataFrame with data
+            sql_result: AI SQL generation result
+            
+        Returns:
+            Chart configuration dictionary
+        """
+        try:
+            if data is None or data.empty:
+                return None
+            
+            # Determine chart type based on data structure
+            if 'amount_range' in data.columns:
+                return {
+                    'type': 'bar_chart',
+                    'data': data.to_dict('records'),
+                    'x_col': 'amount_range',
+                    'y_col': 'fraud_percentage',
+                    'title': 'Fraud Rate by Transaction Amount Range',
+                    'orientation': 'vertical'
+                }
+            elif 'state' in data.columns:
+                return {
+                    'type': 'bar_chart',
+                    'data': data.to_dict('records'),
+                    'x_col': 'state',
+                    'y_col': 'fraud_percentage',
+                    'title': 'Fraud Rate by US State',
+                    'orientation': 'horizontal'
+                }
+            elif 'time_period' in data.columns:
+                if 'period_type' in data.columns:
+                    # Combined daily/monthly analysis
+                    return {
+                        'type': 'multi_line_chart',
+                        'data': data.to_dict('records'),
+                        'x_col': 'time_period',
+                        'y_col': 'fraud_percentage',
+                        'group_col': 'period_type',
+                        'title': 'Fraud Rate Over Time (Daily vs Monthly)',
+                        'description': 'Shows fraud rate trends at both daily and monthly granularity'
+                    }
+                else:
+                    # Single period type
+                    return {
+                        'type': 'line_chart',
+                        'data': data.to_dict('records'),
+                        'x_col': 'time_period',
+                        'y_col': 'fraud_percentage',
+                        'title': 'Fraud Rate Over Time'
+                    }
+            elif 'merchant' in data.columns:
+                return {
+                    'type': 'bar_chart',
+                    'data': data.to_dict('records'),
+                    'x_col': 'merchant',
+                    'y_col': 'fraud_percentage',
+                    'title': 'Fraud Rate by Merchant',
+                    'orientation': 'horizontal'
+                }
+            elif 'region_type' in data.columns:
+                return {
+                    'type': 'comparison_chart',
+                    'data': data.to_dict('records'),
+                    'x_col': 'region_type',
+                    'y_col': 'fraud_percentage',
+                    'title': 'Fraud Rate by Region Type'
+                }
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error generating AI chart: {e}")
+            return None
+    
+    def _generate_ai_response(self, question: str, question_type: QuestionType, 
+                             data: pd.DataFrame, sql_result: Dict) -> Dict[str, Any]:
+        """
+        Generate response for AI SQL generator results
+        
+        Args:
+            question: User's question
+            question_type: Type of question
+            data: DataFrame with data
+            sql_result: AI SQL generation result
+            
+        Returns:
+            Response dictionary
+        """
+        try:
+            if data is None or data.empty:
+                return {
+                    'answer': 'No data available for this analysis.',
+                    'status': 'partial_success',
+                    'insights': []
+                }
+            
+            # Generate insights based on data
+            insights = []
+            
+            if 'amount_range' in data.columns:
+                # Value analysis
+                high_fraud_range = data.loc[data['fraud_percentage'].idxmax()]
+                insights.append(f"Highest fraud rate: {high_fraud_range['amount_range']} transactions at {high_fraud_range['fraud_percentage']:.2f}%")
+                
+                if len(data) > 1:
+                    fraud_rate_diff = data['fraud_percentage'].max() - data['fraud_percentage'].min()
+                    insights.append(f"Fraud rate varies by {fraud_rate_diff:.2f} percentage points across amount ranges")
+            
+            elif 'state' in data.columns:
+                # Geographic analysis
+                top_state = data.iloc[0]
+                insights.append(f"Highest fraud state: {top_state['state']} with {top_state['fraud_percentage']:.2f}% fraud rate")
+                
+                if len(data) > 1:
+                    state_variance = data['fraud_percentage'].std()
+                    insights.append(f"Fraud rates vary significantly across states (std dev: {state_variance:.2f}%)")
+            
+            elif 'time_period' in data.columns:
+                # Temporal analysis
+                if 'period_type' in data.columns:
+                    # Combined daily/monthly analysis
+                    daily_data = data[data['period_type'] == 'daily']
+                    monthly_data = data[data['period_type'] == 'monthly']
+                    
+                    if not daily_data.empty:
+                        daily_volatility = daily_data['fraud_percentage'].std()
+                        insights.append(f"Daily fraud rate volatility: {daily_volatility:.2f}% (standard deviation)")
+                        
+                        max_daily = daily_data.loc[daily_data['fraud_percentage'].idxmax()]
+                        insights.append(f"Highest daily fraud rate: {max_daily['time_period']} with {max_daily['fraud_percentage']:.2f}%")
+                    
+                    if not monthly_data.empty:
+                        monthly_trend = "increasing" if monthly_data['fraud_percentage'].iloc[-1] > monthly_data['fraud_percentage'].iloc[0] else "decreasing"
+                        insights.append(f"Monthly fraud rate shows {monthly_trend} trend over time")
+                        
+                        max_monthly = monthly_data.loc[monthly_data['fraud_percentage'].idxmax()]
+                        insights.append(f"Peak monthly fraud period: {max_monthly['time_period']} with {max_monthly['fraud_percentage']:.2f}% fraud rate")
+                else:
+                    # Single period type
+                    if len(data) > 1:
+                        trend = "increasing" if data['fraud_percentage'].iloc[-1] > data['fraud_percentage'].iloc[0] else "decreasing"
+                        insights.append(f"Fraud rate shows {trend} trend over time")
+                        
+                        max_period = data.loc[data['fraud_percentage'].idxmax()]
+                        insights.append(f"Peak fraud period: {max_period['time_period']} with {max_period['fraud_percentage']:.2f}% fraud rate")
+            
+            elif 'merchant' in data.columns:
+                # Merchant analysis
+                top_merchant = data.iloc[0]
+                insights.append(f"Highest risk merchant: {top_merchant['merchant']} with {top_merchant['fraud_percentage']:.2f}% fraud rate")
+            
+            # Generate summary answer
+            if 'region_type' in data.columns and len(data) == 2:
+                # Cross-border analysis
+                high_value = data[data['region_type'].str.contains('High-Value', case=False, na=False)]
+                low_value = data[data['region_type'].str.contains('Low-Value', case=False, na=False)]
+                
+                if not high_value.empty and not low_value.empty:
+                    high_rate = high_value.iloc[0]['fraud_percentage']
+                    low_rate = low_value.iloc[0]['fraud_percentage']
+                    difference = ((high_rate - low_rate) / low_rate) * 100 if low_rate > 0 else 0
+                    
+                    answer = f"Geographic analysis shows that high-value transactions (cross-border proxy) have a {difference:.1f}% higher fraud rate than low-value transactions (domestic proxy). High-value transactions: {high_rate:.2f}% fraud rate, Low-value transactions: {low_rate:.2f}% fraud rate."
+                else:
+                    answer = f"Geographic analysis completed. {sql_result.get('description', 'Analysis results available.')}"
+            else:
+                answer = f"Analysis completed successfully. {sql_result.get('description', 'Results show fraud patterns across different categories.')}"
+            
+            return {
+                'answer': answer,
+                'status': 'success',
+                'insights': insights,
+                'data_summary': {
+                    'total_records': len(data),
+                    'columns': list(data.columns),
+                    'sample_data': data.head(3).to_dict('records') if len(data) > 0 else []
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error generating AI response: {e}")
+            return {
+                'answer': f"Analysis completed but encountered an error: {str(e)}",
+                'status': 'partial_success',
+                'insights': []
+            }
+
     
     def _handle_document_question(self, question: str, question_type: QuestionType,
                                  confidence: float, metadata: Dict) -> Dict[str, Any]:
         """
-        Handle document-related questions using OpenAI-based search
+        Handle document-related questions using OpenAI-based search with enhanced EEA analysis
         
         Args:
             question: User's question
@@ -438,8 +689,9 @@ class FraudAnalysisService:
                     'status': 'error'
                 }
             
-            # Search documents using OpenAI-based processor
-            search_result = self.document_processor.search_documents(question, max_results=5)
+            # Search documents using OpenAI-based processor with more results for EEA questions
+            max_results = 10 if any(term in question.lower() for term in ["eea", "european", "europe"]) else 5
+            search_result = self.document_processor.search_documents(question, max_results=max_results)
             
             if not search_result.get('success', False):
                 return {
@@ -452,7 +704,16 @@ class FraudAnalysisService:
             sources = search_result.get('sources', [])
             search_confidence = search_result.get('confidence', 0.8)
             
-            # Return the document processor response directly
+            # Enhance answer for EEA questions
+            if any(term in question.lower() for term in ["eea", "european", "europe"]):
+                answer = self._enhance_eea_response(question, answer, sources)
+            
+            # Generate chart if relevant
+            chart = None
+            if any(term in question.lower() for term in ["fraud rate", "percentage", "higher", "lower"]):
+                chart = self._generate_document_chart(question, sources)
+            
+            # Return the enhanced document processor response
             response = {
                 'question_type': question_type.value,
                 'answer': answer,
@@ -461,7 +722,10 @@ class FraudAnalysisService:
                 'metadata': metadata,
                 'document_search_performed': True,
                 'handler': 'document_processor',
-                'chart_type': None
+                'chart_type': chart.get('type') if chart else None,
+                'chart': chart,
+                'fallback_reason': 'No relevant data in transaction database',
+                'document_analysis': True
             }
             
             return response
@@ -473,66 +737,109 @@ class FraudAnalysisService:
                 'status': 'error'
             }
     
-    def _generate_chart(self, question_type: QuestionType, data: pd.DataFrame, 
-                       sql_info: Dict) -> Optional[Dict[str, Any]]:
+    def _enhance_eea_response(self, question: str, answer: str, sources: List[Dict]) -> str:
         """
-        Generate appropriate chart for the question type
+        Enhance response for EEA-specific questions
         
         Args:
-            question_type: Type of question
-            data: DataFrame with data
-            sql_info: SQL generation information
+            question: User's question
+            answer: Base answer from document search
+            sources: Document sources
+            
+        Returns:
+            Enhanced answer with EEA-specific insights
+        """
+        try:
+            # Look for EEA-specific data in sources
+            eea_data = []
+            for source in sources:
+                content = source.get('content', '').lower()
+                if any(term in content for term in ['eea', 'european economic area', 'european', 'cross-border']):
+                    eea_data.append(source)
+            
+            if eea_data:
+                # Extract specific EEA fraud statistics
+                enhanced_answer = answer
+                
+                # Look for specific fraud rate comparisons
+                for source in eea_data:
+                    content = source.get('content', '')
+                    
+                    # Look for percentage comparisons
+                    import re
+                    percentage_matches = re.findall(r'(\d+(?:\.\d+)?)\s*%', content)
+                    if percentage_matches:
+                        enhanced_answer += f"\n\n📊 EEA Fraud Statistics Found:"
+                        enhanced_answer += f"\n- Document contains fraud rate data: {', '.join(percentage_matches[:3])}%"
+                    
+                    # Look for specific EEA vs non-EEA comparisons
+                    if 'eea' in content.lower() and ('non-eea' in content.lower() or 'outside' in content.lower()):
+                        enhanced_answer += f"\n- Contains EEA vs non-EEA fraud rate comparisons"
+                
+                # Add source information
+                enhanced_answer += f"\n\n📄 Source: {eea_data[0].get('source', 'EBA/ECB Report')}"
+                
+                return enhanced_answer
+            else:
+                return answer
+                
+        except Exception as e:
+            self.logger.warning(f"Error enhancing EEA response: {e}")
+            return answer
+    
+    def _generate_document_chart(self, question: str, sources: List[Dict]) -> Optional[Dict[str, Any]]:
+        """
+        Generate chart from document data for fraud rate questions
+        
+        Args:
+            question: User's question
+            sources: Document sources
             
         Returns:
             Chart configuration dictionary
         """
         try:
-            if data is None or data.empty:
-                return None
+            # Look for numerical data in sources
+            chart_data = []
             
-            if question_type == QuestionType.TEMPORAL_ANALYSIS:
-                period = sql_info.get('period', 'monthly')
-                return {
-                    'type': 'line_chart',
-                    'data': data.to_dict('records'),
-                    'x_col': 'date' if 'date' in data.columns else data.columns[0],
-                    'y_col': 'fraud_rate',
-                    'title': f'Fraud Rate Over {period.title()}'
-                }
+            for source in sources:
+                content = source.get('content', '')
+                
+                # Extract percentage data
+                import re
+                percentages = re.findall(r'(\d+(?:\.\d+)?)\s*%', content)
+                
+                if percentages:
+                    # Try to identify what each percentage represents
+                    if 'eea' in content.lower():
+                        for i, pct in enumerate(percentages[:2]):  # Take first 2 percentages
+                            chart_data.append({
+                                'category': 'EEA' if i == 0 else 'Non-EEA',
+                                'fraud_rate': float(pct),
+                                'source': source.get('source', 'Document')
+                            })
+                    else:
+                        for i, pct in enumerate(percentages[:3]):  # Take first 3 percentages
+                            chart_data.append({
+                                'category': f'Category {i+1}',
+                                'fraud_rate': float(pct),
+                                'source': source.get('source', 'Document')
+                            })
             
-            elif question_type == QuestionType.MERCHANT_ANALYSIS:
-                analysis_type = sql_info.get('analysis_type', 'merchant')
+            if chart_data:
                 return {
                     'type': 'bar_chart',
-                    'data': data.to_dict('records'),
-                    'x_col': analysis_type,
+                    'data': chart_data,
+                    'x_col': 'category',
                     'y_col': 'fraud_rate',
-                    'title': f'Top {analysis_type.title()}s by Fraud Rate',
-                    'orientation': 'horizontal'
-                }
-            
-            elif question_type == QuestionType.GEOGRAPHIC_ANALYSIS:
-                return {
-                    'type': 'comparison_chart',
-                    'data': data.to_dict('records'),
-                    'x_col': 'region',
-                    'y_col': 'fraud_rate',
-                    'title': 'Fraud Rate by Region (EEA vs Non-EEA)'
-                }
-            
-            elif question_type == QuestionType.VALUE_ANALYSIS:
-                return {
-                    'type': 'pie_chart',
-                    'data': data.to_dict('records'),
-                    'labels_col': 'transaction_type',
-                    'values_col': 'fraud_value',
-                    'title': 'Fraud Value Distribution by Transaction Type (H1 2023)'
+                    'title': 'Fraud Rates from Document Analysis',
+                    'description': 'Fraud rate data extracted from regulatory documents'
                 }
             
             return None
             
         except Exception as e:
-            self.logger.error(f"Error generating chart: {e}")
+            self.logger.warning(f"Error generating document chart: {e}")
             return None
     
     def get_service_status(self) -> Dict[str, Any]:
@@ -542,13 +849,22 @@ class FraudAnalysisService:
         Returns:
             Dictionary with service status information
         """
-        return {
+        status = {
             'initialized': self.initialized,
             'database_connected': self.database_manager.connection is not None,
             'data_loaded': self.database_manager.tables_loaded,
             'document_index_built': self.document_index_built,
             'data_dir': self.data_dir
         }
+        
+        # Add document processor status and cost optimization stats
+        if hasattr(self.document_processor, 'get_document_summary'):
+            status['document_summary'] = self.document_processor.get_document_summary()
+        
+        if hasattr(self.document_processor, 'get_cost_stats'):
+            status['cost_optimization'] = self.document_processor.get_cost_stats()
+        
+        return status
     
     def get_suggested_questions(self) -> List[Dict[str, str]]:
         """

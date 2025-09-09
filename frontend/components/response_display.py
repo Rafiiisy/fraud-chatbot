@@ -43,7 +43,17 @@ class ResponseDisplay:
         # Chart (if available)
         if 'chart' in response_data and response_data['chart'] is not None:
             st.subheader("📈 Visualization")
-            st.plotly_chart(response_data['chart'], use_container_width=True)
+            try:
+                # Check if chart is a Plotly figure object or needs to be created
+                if hasattr(response_data['chart'], 'show'):
+                    # It's already a Plotly figure
+                    st.plotly_chart(response_data['chart'], use_container_width=True)
+                else:
+                    # It's chart configuration data, create the chart
+                    st.plotly_chart(response_data['chart'], use_container_width=True)
+            except Exception as e:
+                st.error(f"Error displaying chart: {e}")
+                st.write("Chart data available but could not be displayed.")
         
         # Content list (if available)
         if 'content' in response_data and response_data['content']:

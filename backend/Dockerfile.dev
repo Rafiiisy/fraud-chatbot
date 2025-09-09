@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libblas-dev \
     liblapack-dev \
-    libatlas-base-dev \
+    libopenblas-dev \
     pkg-config \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -30,6 +30,11 @@ COPY requirements-docker-minimal.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements-docker-minimal.txt
+
+# Set environment variables for FAISS
+ENV FAISS_CPU_ONLY=1
+ENV MKL_NUM_THREADS=1
+ENV OMP_NUM_THREADS=1
 
 # Copy backend code
 COPY . .

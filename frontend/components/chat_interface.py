@@ -152,6 +152,20 @@ class ChatInterface:
                 
                 # Set response data for display
                 st.session_state.response_data = formatted_response
+                
+                # Store chart with response ID for easy access
+                if 'chart' in formatted_response and formatted_response['chart'] is not None:
+                    # Use same ID generation method as in HTML
+                    import hashlib
+                    response_hash = hashlib.md5(str(formatted_response).encode()).hexdigest()[:8]
+                    response_id = f"response_{response_hash}"
+                    st.session_state.available_charts[response_id] = formatted_response['chart']
+                    st.session_state.latest_chart = formatted_response['chart']
+                    print(f"DEBUG: Stored chart for response_id: {response_id}")
+                    print(f"DEBUG: Available charts now: {list(st.session_state.available_charts.keys())}")
+                else:
+                    st.session_state.latest_chart = None
+                    print("DEBUG: No chart to store")
             
         except Exception as e:
             # Handle any processing errors
@@ -254,6 +268,20 @@ class ChatInterface:
                 
                 # Set response data for display
                 st.session_state.response_data = formatted_response
+                
+                # Store chart with response ID for easy access
+                if 'chart' in formatted_response and formatted_response['chart'] is not None:
+                    # Use same ID generation method as in HTML
+                    import hashlib
+                    response_hash = hashlib.md5(str(formatted_response).encode()).hexdigest()[:8]
+                    response_id = f"response_{response_hash}"
+                    st.session_state.available_charts[response_id] = formatted_response['chart']
+                    st.session_state.latest_chart = formatted_response['chart']
+                    print(f"DEBUG: Stored chart for response_id: {response_id}")
+                    print(f"DEBUG: Available charts now: {list(st.session_state.available_charts.keys())}")
+                else:
+                    st.session_state.latest_chart = None
+                    print("DEBUG: No chart to store")
             
         except Exception as e:
             # Handle any processing errors
@@ -304,6 +332,20 @@ class ChatInterface:
             "metadata": backend_response.get('metadata', {})
         }
         
+        # Handle chart data from backend if available
+        if 'chart' in backend_response and backend_response['chart']:
+            print(f"=== CHART DEBUG ===")
+            print(f"Backend chart data: {backend_response['chart']}")
+            chart = self._create_chart_from_data(
+                data, 
+                backend_response['chart'], 
+                question_type
+            )
+            print(f"Created chart: {chart is not None}")
+            if chart:
+                print(f"Chart type: {type(chart)}")
+            formatted_response["chart"] = chart
+        
         return formatted_response
     
     def _get_title_for_question_type(self, question_type):
@@ -353,8 +395,8 @@ class ChatInterface:
             return data
     
     def _create_chart_from_data(self, data, chart_data, question_type):
-        """Create chart from data based on question type"""
-        if not data:
+        """Create chart from data based on question type or backend chart configuration"""
+        if not data and not chart_data:
             return None
         
         try:
@@ -362,6 +404,14 @@ class ChatInterface:
             import plotly.graph_objects as go
             import pandas as pd
             
+            # If we have backend chart configuration, use it
+            if chart_data and isinstance(chart_data, dict) and 'type' in chart_data:
+                return self._create_chart_from_backend_config(chart_data)
+            
+            # Fallback to original logic for data-based chart creation
+            if not data:
+                return None
+                
             df = pd.DataFrame(data)
             
             if question_type == 'temporal_analysis':
@@ -425,6 +475,129 @@ class ChatInterface:
             return None
         
         return None
+    
+    def _create_chart_from_backend_config(self, chart_config):
+        """Create Plotly chart from backend chart configuration"""
+        try:
+            import plotly.express as px
+            import plotly.graph_objects as go
+            import pandas as pd
+            
+            chart_type = chart_config.get('type', 'bar_chart')
+            data = chart_config.get('data', [])
+            title = chart_config.get('title', 'Chart')
+            
+            if not data:
+                return None
+            
+            df = pd.DataFrame(data)
+            
+            if chart_type == 'bar_chart':
+                x_col = chart_config.get('x_col', df.columns[0])
+                y_col = chart_config.get('y_col', df.columns[1])
+                orientation = chart_config.get('orientation', 'vertical')
+                
+                if orientation == 'horizontal':
+                    fig = px.bar(
+                        df,
+                        x=y_col,
+                        y=x_col,
+                        orientation='h',
+                        title=title,
+                        color=x_col if len(df) <= 10 else None
+                    )
+                else:
+                    fig = px.bar(
+                        df,
+                        x=x_col,
+                        y=y_col,
+                        title=title,
+                        color=x_col if len(df) <= 10 else None
+                    )
+                
+                fig.update_layout(height=400)
+                return fig
+            
+            elif chart_type == 'line_chart':
+                x_col = chart_config.get('x_col', df.columns[0])
+                y_col = chart_config.get('y_col', df.columns[1])
+                
+                fig = px.line(
+                    df,
+                    x=x_col,
+                    y=y_col,
+                    title=title,
+                    markers=True
+                )
+                
+                # Format y-axis for percentages if it looks like a rate
+                if 'rate' in y_col.lower() or 'percentage' in y_col.lower():
+                    fig.update_yaxes(tickformat='.2%')
+                
+                fig.update_layout(height=400)
+                return fig
+            
+            elif chart_type == 'multi_line_chart':
+                x_col = chart_config.get('x_col', 'time_period')
+                y_col = chart_config.get('y_col', 'fraud_percentage')
+                group_col = chart_config.get('group_col', 'period_type')
+                
+                fig = px.line(
+                    df,
+                    x=x_col,
+                    y=y_col,
+                    color=group_col,
+                    title=title,
+                    markers=True
+                )
+                
+                # Format y-axis for percentages
+                fig.update_yaxes(tickformat='.2%')
+                fig.update_layout(height=400)
+                return fig
+            
+            elif chart_type == 'comparison_chart':
+                x_col = chart_config.get('x_col', df.columns[0])
+                y_col = chart_config.get('y_col', df.columns[1])
+                
+                fig = px.bar(
+                    df,
+                    x=x_col,
+                    y=y_col,
+                    title=title,
+                    color=x_col,
+                    text=y_col
+                )
+                
+                # Add value labels on bars
+                fig.update_traces(texttemplate='%{text:.2%}', textposition='outside')
+                fig.update_layout(height=400)
+                return fig
+            
+            elif chart_type == 'pie_chart':
+                labels_col = chart_config.get('labels_col', df.columns[0])
+                values_col = chart_config.get('values_col', df.columns[1])
+                
+                fig = px.pie(
+                    df,
+                    values=values_col,
+                    names=labels_col,
+                    title=title
+                )
+                
+                fig.update_layout(height=400)
+                return fig
+            
+            else:
+                # Default to bar chart for unknown types
+                return self._create_chart_from_backend_config({
+                    **chart_config,
+                    'type': 'bar_chart'
+                })
+                
+        except Exception as e:
+            print(f"Error creating chart from backend config: {e}")
+            return None
     
     def get_chat_html(self):
         """Get chat content as HTML string"""
@@ -524,9 +697,19 @@ class ChatInterface:
                 item_clean = str(item).replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
                 html += f"{item_clean}<br>"
         
+        # Chart indicator (if available) - Just show a subtle indicator
+        if self.is_chart_generatable(response_data):
+            html += '<div style="margin-top: 0.5rem; font-style: italic; color: #666; font-size: 0.9rem;">'
+            html += '📊 Chart data available - use buttons below to generate visualization'
+            html += '</div>'
+        
         # Sources removed - no longer displayed in UI
         
         return html
+    
+    def is_chart_generatable(self, response_data):
+        """Check if response has chart data available"""
+        return 'chart' in response_data and response_data['chart'] is not None
     
     def _markdown_to_html(self, markdown_text):
         """Convert basic markdown to HTML"""

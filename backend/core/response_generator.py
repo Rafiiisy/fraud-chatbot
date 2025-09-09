@@ -242,23 +242,40 @@ class ResponseGenerator:
             }
         
         # Calculate comparison
-        eea_data = data[data['region'] == 'EEA']
-        non_eea_data = data[data['region'] == 'Non-EEA']
+        high_value_data = data[data['region'].str.contains('High-Value', case=False, na=False)]
+        low_value_data = data[data['region'].str.contains('Low-Value', case=False, na=False)]
         
-        if not eea_data.empty and not non_eea_data.empty:
-            eea_rate = eea_data['fraud_rate'].iloc[0]
-            non_eea_rate = non_eea_data['fraud_rate'].iloc[0]
-            difference = non_eea_rate - eea_rate
-            percentage_higher = (difference / eea_rate) * 100 if eea_rate > 0 else 0
+        if not high_value_data.empty and not low_value_data.empty:
+            high_value_rate = high_value_data['fraud_rate'].iloc[0]
+            low_value_rate = low_value_data['fraud_rate'].iloc[0]
+            difference = high_value_rate - low_value_rate
+            percentage_higher = (difference / low_value_rate) * 100 if low_value_rate > 0 else 0
             
             insights = [
-                f"EEA fraud rate: {eea_rate:.2%}",
-                f"Non-EEA fraud rate: {non_eea_rate:.2%}",
-                f"Non-EEA fraud rate is {percentage_higher:.1f}% higher than EEA"
+                f"High-Value (Cross-border proxy) fraud rate: {high_value_rate:.2%}",
+                f"Low-Value (Domestic proxy) fraud rate: {low_value_rate:.2%}",
+                f"High-Value transactions have a {percentage_higher:.1f}% {'higher' if percentage_higher > 0 else 'lower'} fraud rate than Low-Value transactions"
             ]
             
-            summary = f"Geographic analysis shows that fraud rates are significantly higher outside the EEA. "
-            summary += f"Non-EEA transactions have a {percentage_higher:.1f}% higher fraud rate than EEA transactions."
+            summary = f"Geographic analysis shows that fraud rates differ between transaction types. "
+            if percentage_higher > 0:
+                summary += f"High-Value transactions (cross-border proxy) have a {percentage_higher:.1f}% higher fraud rate than Low-Value transactions (domestic proxy)."
+            else:
+                summary += f"Low-Value transactions (domestic proxy) have a {abs(percentage_higher):.1f}% higher fraud rate than High-Value transactions (cross-border proxy)."
+        elif not high_value_data.empty:
+            high_value_rate = high_value_data['fraud_rate'].iloc[0]
+            insights = [
+                f"High-Value (Cross-border proxy) fraud rate: {high_value_rate:.2%}",
+                "No Low-Value (Domestic proxy) data available for comparison"
+            ]
+            summary = f"Geographic analysis shows High-Value transactions fraud rate of {high_value_rate:.2%}, but no Low-Value transactions data is available for comparison."
+        elif not low_value_data.empty:
+            low_value_rate = low_value_data['fraud_rate'].iloc[0]
+            insights = [
+                f"Low-Value (Domestic proxy) fraud rate: {low_value_rate:.2%}",
+                "No High-Value (Cross-border proxy) data available for comparison"
+            ]
+            summary = f"Geographic analysis shows Low-Value transactions fraud rate of {low_value_rate:.2%}, but no High-Value transactions data is available for comparison."
         else:
             insights = ["Insufficient data for geographic comparison"]
             summary = "Geographic analysis could not be completed due to insufficient data."

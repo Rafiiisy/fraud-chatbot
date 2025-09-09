@@ -148,23 +148,28 @@ class SQLGenerator:
         Generate SQL for geographic analysis (Question 5)
         How much higher are fraud rates when the transaction counterpart is located outside the EEA?
         
-        Since we don't have merchant_country, we'll use a simplified approach based on
-        transaction amounts and merchant categories to simulate geographic differences.
+        Since the dataset appears to be US-based, we'll use a different approach:
+        - High-value transactions (amt > 100) as proxy for international/cross-border
+        - Low-value transactions (amt <= 100) as proxy for domestic/local
         """
         
-        # Use a simplified approach: compare high-value vs low-value transactions
-        # as a proxy for domestic vs international (cross-border) transactions
+        # Use transaction amount as proxy for geographic location since dataset is US-based
+        # High-value transactions are more likely to be cross-border/international
         sql = f"""
         WITH fraud_rates AS (
             SELECT 
                 CASE 
                     WHEN amt > 100 THEN 'High-Value (Cross-border proxy)'
                     ELSE 'Low-Value (Domestic proxy)'
-                END as transaction_type,
+                END as region,
                 AVG(is_fraud) as fraud_rate,
                 COUNT(*) as total_transactions,
                 SUM(is_fraud) as fraud_count,
-                AVG(amt) as avg_amount
+                AVG(amt) as avg_amount,
+                AVG(merch_lat) as avg_lat,
+                AVG(merch_long) as avg_long,
+                MIN(amt) as min_amount,
+                MAX(amt) as max_amount
             FROM {self.table_name}
             WHERE amt IS NOT NULL
             GROUP BY 
@@ -174,12 +179,16 @@ class SQLGenerator:
                 END
         )
         SELECT 
-            transaction_type,
+            region,
             fraud_rate,
             total_transactions,
             fraud_count,
             ROUND(fraud_rate * 100, 2) as fraud_percentage,
-            ROUND(avg_amount, 2) as avg_amount
+            ROUND(avg_amount, 2) as avg_amount,
+            ROUND(avg_lat, 2) as avg_latitude,
+            ROUND(avg_long, 2) as avg_longitude,
+            ROUND(min_amount, 2) as min_amount,
+            ROUND(max_amount, 2) as max_amount
         FROM fraud_rates
         ORDER BY fraud_rate DESC
         """
@@ -187,7 +196,7 @@ class SQLGenerator:
         return {
             "sql": sql,
             "question_type": "geographic_analysis",
-            "description": "Compares fraud rates between high-value (cross-border proxy) and low-value (domestic proxy) transactions"
+            "description": "Compares fraud rates between high-value (cross-border proxy) and low-value (domestic proxy) transactions since dataset is US-based"
         }
     
     def generate_value_analysis(self, question: str) -> Dict[str, str]:
