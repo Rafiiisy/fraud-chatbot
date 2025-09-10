@@ -44,7 +44,7 @@ An intelligent AI-powered chatbot system that analyzes credit card fraud data an
 
 This project implements a comprehensive fraud detection chatbot that can:
 - Analyze credit card fraud patterns from tabular data
-- Process and extract insights from fraud-related documents
+- Process and extract insights from fraud-related documents (EBA_ECB 2024 Report on Payment Fraud.pdf)
 - Provide intelligent responses to complex analytical questions
 - Generate visualizations and forecasts
 - Handle both data-driven and document-based queries
@@ -141,7 +141,7 @@ This project implements a comprehensive fraud detection chatbot that can:
 - **Python 3.9**: Core programming language
 - **Flask**: REST API framework
 - **SQLite**: Database for tabular data
-- **OpenAI GPT-4o-mini**: LLM for document processing and analysis
+- **OpenAI GPT-4o-mini**: LLM for document processing and analysis (EBA_ECB 2024 Report on Payment Fraud.pdf)
 - **Statsmodels**: ARIMA forecasting models
 - **Pandas**: Data manipulation and analysis
 - **NumPy**: Numerical computing
@@ -197,6 +197,9 @@ mkdir -p dataset/archive
 # Copy the downloaded files to dataset/archive/
 # - fraudTrain.csv
 # - fraudTest.csv
+
+# The document for analysis is already included:
+# - EBA_ECB 2024 Report on Payment Fraud.pdf
 ```
 
 ### **4. Run Using Scripts**
