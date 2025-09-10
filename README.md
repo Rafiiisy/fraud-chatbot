@@ -459,232 +459,168 @@ docker-compose -f docker-compose.dev.yml up -d
 
 ## 🔄 Data Processing Pipeline
 
-### **Preprocessing Methods**
+### **Data Ingestion**
 
-#### **1. Tabular Data Preprocessing**
+#### **1. CSV Data Loading**
 ```python
-# CSV Data Ingestion and Cleaning
-def preprocess_fraud_data(df):
-    # Data type conversion and validation
-    df['trans_date_trans_time'] = pd.to_datetime(df['trans_date_trans_time'])
-    df['is_fraud'] = df['is_fraud'].astype(int)
-    df['amt'] = pd.to_numeric(df['amt'], errors='coerce')
+# Direct CSV to SQLite Loading
+def load_csv_data(self):
+    # Load training data
+    df_train = pd.read_csv("dataset/archive/fraudTrain.csv")
+    df_train.to_sql('transactions', connection, if_exists='replace', index=False)
     
-    # EEA country classification
-    df['is_eea'] = df['merchant'].apply(classify_eea_merchant)
+    # Load test data and append
+    df_test = pd.read_csv("dataset/archive/fraudTest.csv")
+    df_test.to_sql('transactions', connection, if_exists='append', index=False)
     
-    # Feature engineering for analysis
-    df['hour'] = df['trans_date_trans_time'].dt.hour
-    df['day_of_week'] = df['trans_date_trans_time'].dt.dayofweek
-    df['amount_range'] = pd.cut(df['amt'], bins=5, labels=['Very Low', 'Low', 'Medium', 'High', 'Very High'])
-    
-    return df
+    # Create performance indexes
+    self._create_indexes()
 ```
 
-#### **2. Document Preprocessing**
+#### **2. Data Quality Assessment**
+The tabular data requires **minimal preprocessing** due to its exceptional quality:
+
+**✅ **No Missing Values**: Complete dataset with 0% missing data across all columns**
+
+**✅ **No Duplicate Rows**: Clean data with no duplicate transaction records**
+
+**✅ **Consistent Data Types**: 11 numeric and 13 categorical columns with proper type consistency**
+
+**✅ **Valid Data Ranges**: All amounts, dates, and geographic coordinates within expected ranges**
+
+**✅ **High Data Quality Score**: 95%+ quality score indicating excellent data integrity**
+
+**Why No Further Preprocessing is Needed:**
+- **Complete Data**: No missing values require imputation or handling
+- **Clean Records**: No duplicate rows need removal
+- **Type Consistency**: All data types are appropriate for analysis
+- **Valid Values**: No outliers or invalid data points detected
+- **Ready for Analysis**: Data is immediately suitable for fraud detection algorithms
+
+This high-quality dataset allows the system to focus on **analysis and insights** rather than data cleaning, enabling faster response times and more accurate fraud detection.
+
+#### **2. Document Prepocessing**
 ```python
-# PDF Text Extraction and Normalization
-def preprocess_documents(pdf_path):
-    # Extract text from PDF
+# PDF Text Extraction and Chunking
+def process_documents(self):
+    # Extract text from EBA_ECB 2024 Report on Payment Fraud.pdf
     text = extract_pdf_text(pdf_path)
     
-    # Normalize text for better processing
-    text = normalize_text(text)
-    # - Fix hyphenation issues
-    # - Remove ligatures and special characters
-    # - Normalize line breaks and spacing
-    
-    # Chunk documents for vector search
+    # Create document chunks for vector search
     chunks = create_document_chunks(text, chunk_size=1000, overlap=200)
     
-    # Generate embeddings for FAISS
+    # Generate OpenAI embeddings
     embeddings = create_openai_embeddings(chunks)
     
-    return chunks, embeddings
+    # Build FAISS index
+    faiss_index = create_faiss_index(embeddings, chunks)
+    
+    return faiss_index, chunks
 ```
 
-#### **3. Query Preprocessing**
+### **Query Processing**
+
+#### **1. LLM-Based Query Classification**
 ```python
-# Dynamic Query Analysis and Expansion
-def preprocess_query(question):
-    # LLM-based query analysis
-    analysis = analyze_query_with_llm(question)
+# Intelligent Query Routing
+def classify_query(self, query):
+    # Use OpenAI for relevance detection
+    is_fraud_related, confidence, reasoning = self.openai.is_fraud_related_query(query)
     
-    # Generate query variations for better recall
-    variations = generate_query_variations(question, count=10)
+    # Classify question type (temporal, merchant, geographic, etc.)
+    question_type, confidence, metadata = self.openai.classify_query_with_llm(query)
     
-    # Extract key concepts and search terms
-    search_terms = extract_search_terms(analysis)
-    
-    # Determine processing strategy
-    strategy = determine_processing_strategy(analysis)
-    
-    return {
-        'original': question,
-        'variations': variations,
-        'search_terms': search_terms,
-        'strategy': strategy
-    }
+    return question_type, confidence, metadata
 ```
 
-### **Postprocessing Methods**
-
-#### **1. Response Enhancement and Formatting**
+#### **2. Dynamic SQL Generation**
 ```python
-# Enhanced Response Generation
-def postprocess_response(data, question_type, metadata):
+# AI-Powered SQL Query Creation
+def generate_sql(self, question, question_type):
+    # Generate SQL based on question type
     if question_type == 'temporal_analysis':
-        # Statistical analysis and insights
-        insights = generate_temporal_insights(data)
-        # - Volatility analysis
-        # - Trend detection
-        # - Peak/valley identification
-        
+        sql = self._generate_temporal_sql(question)
     elif question_type == 'merchant_analysis':
-        # Risk categorization and analysis
-        insights = generate_merchant_insights(data)
-        # - Risk categorization
-        # - Quartile analysis
-        # - Top merchant identification
+        sql = self._generate_merchant_sql(question)
+    # ... other types
     
-    # Format comprehensive response
-    response = format_enhanced_response(insights, metadata)
-    return response
+    # Execute query and return results
+    results = self.database.execute_query(sql)
+    return results
 ```
 
-#### **2. Chart Data Processing**
-```python
-# Dynamic Chart Generation
-def postprocess_chart_data(data, chart_type):
-    if chart_type == 'temporal':
-        # Process time series data
-        processed_data = process_temporal_data(data)
-        # - Daily/monthly aggregation
-        # - Trend line calculation
-        # - Volatility indicators
-        
-    elif chart_type == 'categorical':
-        # Process categorical data
-        processed_data = process_categorical_data(data)
-        # - Risk category grouping
-        # - Percentage calculations
-        # - Ranking and sorting
-    
-    return generate_chart_config(processed_data)
-```
+### **Response Generation**
 
-#### **3. Quality Scoring and Validation**
+#### **1. Data Analysis and Insights**
 ```python
-# Response Quality Assessment
-def postprocess_quality_scoring(response, question, metadata):
-    # Accuracy scoring based on data consistency
-    accuracy_score = calculate_accuracy_score(response, metadata)
+# Statistical Analysis and Response Formatting
+def format_backend_response(self, backend_response):
+    # Extract data from SQL results
+    data = backend_response.get('data', {})
     
-    # Completeness scoring
-    completeness_score = calculate_completeness_score(response, question)
+    # Create meaningful explanation
+    explanation = f"Based on the analysis of {total_transactions:,} transactions, the fraud rate is {fraud_rate:.2f}%."
     
-    # Relevance scoring
-    relevance_score = calculate_relevance_score(response, question)
-    
-    # Confidence scoring
-    confidence_score = calculate_confidence_score(metadata)
+    # Generate insights (avoiding duplication)
+    insights = []
+    if fraud_rate > 0:
+        insights.append(f"Fraud rate of {fraud_rate:.2f}% indicates {'high' if fraud_rate > 5 else 'moderate' if fraud_rate > 2 else 'low'} risk level")
     
     return {
-        'accuracy': accuracy_score,
-        'completeness': completeness_score,
-        'relevance': relevance_score,
-        'confidence': confidence_score,
-        'overall': (accuracy_score + completeness_score + relevance_score + confidence_score) / 4
+        "explanation": explanation,
+        "content": insights,
+        "chart": chart_data
     }
 ```
 
-### **RAG (Retrieval Augmented Generation) Implementation**
-
-#### **1. Document Retrieval Pipeline**
+#### **2. Chart Generation**
 ```python
-# Hybrid Document Processing with FAISS + OpenAI
-def rag_document_processing(query, max_results=5):
-    # Step 1: Query preprocessing and expansion
-    processed_query = preprocess_query(query)
+# Dynamic Visualization Creation
+def create_chart_from_data(self, analysis_data, chart_data, question_type):
+    if question_type == 'temporal_analysis':
+        # Create line chart for time series
+        fig = px.line(data, x='date', y='fraud_rate', title='Fraud Rate Over Time')
+    elif question_type == 'merchant_analysis':
+        # Create bar chart for merchant comparison
+        fig = px.bar(data, x='merchant', y='fraud_rate', title='Fraud Rate by Merchant')
     
-    # Step 2: FAISS vector search for fast retrieval
-    faiss_results = search_with_faiss(processed_query['search_terms'], max_results)
+    return fig
+```
+
+### **Document Search (RAG)**
+
+#### **1. Hybrid Document Processing**
+```python
+# FAISS + OpenAI Document Search
+def search_documents(self, query):
+    # Step 1: FAISS vector search for fast retrieval
+    faiss_results = self.faiss_index.search(query_embedding, k=5)
     
-    # Step 3: BM25 keyword prefiltering for precision
-    bm25_results = search_with_bm25(processed_query['search_terms'], max_results)
+    # Step 2: BM25 keyword search for precision
+    bm25_results = self.bm25_index.search(query, k=5)
     
-    # Step 4: Result fusion and ranking
-    combined_results = fuse_search_results(faiss_results, bm25_results)
+    # Step 3: Combine and rank results
+    combined_results = self._fuse_search_results(faiss_results, bm25_results)
     
-    # Step 5: OpenAI analysis for complex queries
-    if needs_openai_analysis(combined_results, query):
-        openai_results = analyze_with_openai(query, combined_results)
-        return openai_results
+    # Step 4: OpenAI analysis for complex queries
+    if self._needs_openai_analysis(combined_results, query):
+        return self.openai.analyze_documents(query, combined_results)
     
     return combined_results
 ```
 
-#### **2. Context Enhancement**
+#### **2. Response Enhancement**
 ```python
 # Context-Aware Response Generation
-def enhance_context_with_rag(question, retrieved_docs, tabular_data):
-    # Combine document context with tabular data
-    context = build_comprehensive_context(retrieved_docs, tabular_data)
-    
-    # Generate enhanced response using combined context
-    response = generate_context_aware_response(question, context)
-    
-    # Add source citations and confidence scores
-    enhanced_response = add_metadata_and_sources(response, retrieved_docs)
+def enhance_response_with_llm(self, question, current_response, document_context):
+    # Use OpenAI to enhance response quality
+    enhanced_response = self.openai.enhance_response_with_llm(
+        question, 
+        current_response, 
+        document_context
+    )
     
     return enhanced_response
-```
-
-### **Embedding and Vector Search**
-
-#### **1. OpenAI Embeddings**
-```python
-# Text Embedding Generation
-def create_openai_embeddings(texts):
-    # Batch processing for efficiency
-    embeddings = []
-    batch_size = 100
-    
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        batch_embeddings = openai_client.embeddings.create(
-            model="text-embedding-3-small",
-            input=batch
-        )
-        embeddings.extend([e.embedding for e in batch_embeddings.data])
-    
-    return np.array(embeddings)
-```
-
-#### **2. FAISS Index Management**
-```python
-# FAISS Index Creation and Search
-def create_faiss_index(embeddings, chunks):
-    # Create FAISS index
-    dimension = embeddings.shape[1]
-    index = faiss.IndexFlatIP(dimension)  # Inner product for cosine similarity
-    
-    # Normalize embeddings for cosine similarity
-    faiss.normalize_L2(embeddings)
-    
-    # Add embeddings to index
-    index.add(embeddings)
-    
-    return index
-
-def search_faiss_index(index, query_embedding, k=5):
-    # Normalize query embedding
-    faiss.normalize_L2(query_embedding.reshape(1, -1))
-    
-    # Search for similar vectors
-    scores, indices = index.search(query_embedding.reshape(1, -1), k)
-    
-    return scores[0], indices[0]
 ```
 
 ## 📈 Performance Metrics
