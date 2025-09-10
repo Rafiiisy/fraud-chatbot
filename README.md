@@ -1,6 +1,6 @@
 # 🚨 Fraud Detection Chatbot
 
-An intelligent AI-powered chatbot system that analyzes credit card fraud data and provides insights through natural language queries. Built for the Mekari AI Engineer code challenge, this system combines tabular data analysis with document processing to answer complex fraud-related questions.
+An intelligent AI-powered chatbot system that analyzes credit card fraud data and provides insights through natural language queries. Built for the AI Engineer challenge, this system combines tabular data analysis with document processing to answer complex fraud-related questions.
 
 ## 📋 Table of Contents
 
@@ -648,7 +648,7 @@ def enhance_response_with_llm(self, question, current_response, document_context
 
 ## 📄 License
 
-This project is developed for the Mekari AI Engineer code challenge.
+This project is developed for the AI Engineer code challenge.
 
 ## 📞 Support
 
@@ -659,7 +659,7 @@ For questions or issues:
 
 ---
 
-**Built with ❤️ for the Mekari AI Engineer Challenge**
+
 
 <!-- ---
 
