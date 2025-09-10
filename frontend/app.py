@@ -13,6 +13,7 @@ from components.header import Header
 from components.sidebar import Sidebar
 from components.chat_interface import ChatInterface
 from components.response_display import ResponseDisplay
+from components.evaluation import EvaluationComponent
 
 
 class FraudChatbotApp:
@@ -21,6 +22,7 @@ class FraudChatbotApp:
         self.sidebar = Sidebar()
         self.chat_interface = ChatInterface()
         self.response_display = ResponseDisplay()
+        self.evaluation = EvaluationComponent()
         self.initialize_session_state()
     
     def initialize_session_state(self):
@@ -52,14 +54,23 @@ class FraudChatbotApp:
         self.header.setup_page_config()
         self.header.render_custom_css()
         
-        # Render header
-        self.header.render_header()
+        # Render sidebar with navigation
+        self.sidebar.render_sidebar()
         
-        # Create centered layout with sidebar on the side
+        # Render content based on current page
+        current_page = st.session_state.get('current_page', 'chat')
+        
+        if current_page == 'chat':
+            # Render header only for chat page
+            self.header.render_header()
+            self._render_chat_interface()
+        elif current_page == 'evaluation':
+            self.evaluation.render_evaluation_page()
+    
+    def _render_chat_interface(self):
+        """Render the main chat interface"""
+        # Create centered layout
         col1, col2, col3 = st.columns([1, 2, 1])
-        
-        with col1:
-            self.sidebar.render_sidebar()
         
         with col2:
             # Main content area with chat container centered

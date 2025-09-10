@@ -164,6 +164,7 @@ class SimpleDocumentProcessor:
             - Specify the correct document names
             - Provide specific, actionable information
             - Keep quotes concise but meaningful
+            - Do NOT include (Source X) references in your answer text
             """
             
             response = self.openai_client._make_api_call(prompt, max_tokens=1000)

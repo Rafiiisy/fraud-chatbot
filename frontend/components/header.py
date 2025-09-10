@@ -555,5 +555,76 @@ class Header:
             .chat-container * {
                 text-align: center !important;
             }
+            
+            /* Prevent hyperlink conversion - make all links look like normal text */
+            .chat-container a,
+            .assistant-message a,
+            .user-message a,
+            .assistant-content a,
+            .user-content a {
+                color: #ffffff !important;
+                text-decoration: none !important;
+                pointer-events: none !important;
+                background: none !important;
+                border: none !important;
+            }
+            
+            .chat-container a:hover,
+            .assistant-message a:hover,
+            .user-message a:hover,
+            .assistant-content a:hover,
+            .user-content a:hover {
+                color: #ffffff !important;
+                text-decoration: none !important;
+                background: none !important;
+                border: none !important;
+            }
+            
+            /* Override Streamlit's default link styling */
+            .stMarkdown a,
+            .stMarkdown p a,
+            .stMarkdown div a,
+            .stMarkdown span a {
+                color: #ffffff !important;
+                text-decoration: none !important;
+                background: none !important;
+                border: none !important;
+            }
+            
+            .stMarkdown a:hover,
+            .stMarkdown p a:hover,
+            .stMarkdown div a:hover,
+            .stMarkdown span a:hover {
+                color: #ffffff !important;
+                text-decoration: none !important;
+                background: none !important;
+                border: none !important;
+            }
+            
+            /* Force all text to be white and prevent any link styling */
+            .chat-container *,
+            .assistant-message *,
+            .user-message *,
+            .assistant-content *,
+            .user-content * {
+                color: #ffffff !important;
+            }
+            
+            /* Specifically target any remaining blue text */
+            .chat-container a:not([style*="color"]),
+            .assistant-message a:not([style*="color"]),
+            .user-message a:not([style*="color"]) {
+                color: #ffffff !important;
+            }
+            
+            /* Ensure spans don't have special styling */
+            .chat-container span,
+            .assistant-message span,
+            .user-message span {
+                color: inherit !important;
+                background: none !important;
+                font-weight: inherit !important;
+                font-style: inherit !important;
+            }
         </style>
         """, unsafe_allow_html=True)

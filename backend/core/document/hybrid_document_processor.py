@@ -990,6 +990,7 @@ class HybridDocumentProcessor:
             - Specify the correct document names
             - Provide specific, actionable information
             - Keep quotes concise but meaningful
+            - Do NOT include (Source X) references in your answer text
             """
             
             response = self.openai_client._make_api_call(prompt, max_tokens=1000)
@@ -1086,7 +1087,7 @@ class HybridDocumentProcessor:
         # Prepare context from sources
         context = ""
         for i, source in enumerate(sources[:5]):  # Use more sources for better coverage
-            context += f"\n--- Source {i+1} from {source['document']} ---\n"
+            context += f"\n--- {source['document']} ---\n"
             context += source['quote'] + "\n"
         
         prompt = f"""
@@ -1104,6 +1105,7 @@ class HybridDocumentProcessor:
         4. Be specific and cite exact numbers when available
         5. If multiple statistics are mentioned, include all relevant ones
         6. Focus on quantitative data and specific comparisons
+        7. Do NOT include (Source X) references in your answer text
         
         Please provide a comprehensive answer based on the excerpts. Be specific and cite the sources when appropriate.
         """

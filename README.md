@@ -2,6 +2,44 @@
 
 An intelligent AI-powered chatbot system that analyzes credit card fraud data and provides insights through natural language queries. Built for the Mekari AI Engineer code challenge, this system combines tabular data analysis with document processing to answer complex fraud-related questions.
 
+## 📋 Table of Contents
+
+1. [Project Overview](#-project-overview)
+2. [Key Features](#-key-features)
+   - [Intelligent Query Classification](#-intelligent-query-classification)
+   - [Comprehensive Data Analysis](#-comprehensive-data-analysis)
+   - [Advanced Document Processing](#-advanced-document-processing)
+   - [Modern User Interface](#-modern-user-interface)
+   - [Robust Architecture](#-robust-architecture)
+3. [Architecture](#-architecture)
+4. [Tech Stack](#-tech-stack)
+   - [Backend Technologies](#backend-technologies)
+   - [Frontend Technologies](#frontend-technologies)
+   - [DevOps & Deployment](#devops--deployment)
+   - [AI & ML Libraries](#ai--ml-libraries)
+5. [Quick Start](#-quick-start)
+   - [Prerequisites](#prerequisites)
+   - [Setup Instructions](#setup-instructions)
+   - [Access the Application](#access-the-application)
+6. [Available Scripts](#-available-scripts)
+7. [Testing the System](#-testing-the-system)
+   - [Sample Questions](#sample-questions-to-try)
+   - [Answer Evaluation System](#answer-evaluation-system)
+   - [API Testing](#api-testing)
+8. [Completed Features](#-completed-features)
+9. [Key Achievements](#-key-achievements)
+10. [Project Structure](#-project-structure)
+11. [Configuration](#-configuration)
+12. [Troubleshooting](#-troubleshooting)
+13. [Data Processing Pipeline](#-data-processing-pipeline)
+   - [Preprocessing Methods](#preprocessing-methods)
+   - [Postprocessing Methods](#postprocessing-methods)
+   - [RAG Implementation](#rag-retrieval-augmented-generation-implementation)
+   - [Embedding and Vector Search](#embedding-and-vector-search)
+14. [Performance Metrics](#-performance-metrics)
+
+---
+
 ## 🎯 Project Overview
 
 This project implements a comprehensive fraud detection chatbot that can:
@@ -44,11 +82,14 @@ This project implements a comprehensive fraud detection chatbot that can:
 - **Response Metadata**: Confidence scores, insights, and recommendations
 - **Chart State Management**: Session-based chart tracking and display control
 
+![Chatbot Interface](docs/chatbotPage_screenshot.png)
+
 ### 🏗️ **Robust Architecture**
 - **Microservices**: Database API + Backend API + Frontend
 - **Docker Containerization**: Lightweight, production-ready deployment
 - **API-Based Design**: RESTful endpoints with comprehensive error handling
 - **Health Monitoring**: Real-time service status and health checks
+- **Answer Evaluation System**: Comprehensive response quality assessment with accuracy, relevance, and overall scoring
 
 ## 🏛️ Architecture
 
@@ -86,6 +127,7 @@ This project implements a comprehensive fraud detection chatbot that can:
    - Document fallback system for EEA/missing data questions
    - Forecasting with ARIMA models
    - AI agent coordination
+   - Answer evaluation system with quality scoring
 
 3. **Database API (SQLite)**
    - CSV data ingestion and storage
@@ -103,6 +145,8 @@ This project implements a comprehensive fraud detection chatbot that can:
 - **Statsmodels**: ARIMA forecasting models
 - **Pandas**: Data manipulation and analysis
 - **NumPy**: Numerical computing
+- **FAISS**: Vector search for document processing
+- **Rank-BM25**: Keyword-based document search
 
 ### **Frontend Technologies**
 - **Streamlit**: Web application framework
@@ -118,6 +162,7 @@ This project implements a comprehensive fraud detection chatbot that can:
 ### **AI & ML Libraries**
 - **OpenAI API**: Language model integration and embeddings
 - **FAISS**: Efficient vector search for document processing
+- **Rank-BM25**: Keyword-based document search and prefiltering
 - **Statsmodels**: Time series forecasting
 - **Pandas**: Data analysis
 - **NumPy**: Numerical operations
@@ -131,7 +176,7 @@ This project implements a comprehensive fraud detection chatbot that can:
 
 ### **1. Clone the Repository**
 ```bash
-git clone <repository-url>
+git clone https://github.com/Rafiiisy/fraud-chatbot
 cd fraud-chatbot
 ```
 
@@ -231,6 +276,53 @@ python -m streamlit run app.py
 5. **Geographic Analysis**: "How much higher are fraud rates when the transaction counterpart is located outside the EEA?"
 6. **Value Analysis**: "What share of total card fraud value in H1 2023 was due to cross-border transactions?"
 
+### **Answer Evaluation System**
+The system includes a comprehensive evaluation framework for assessing response quality:
+
+![Evaluation Page](docs/evaluationPage_screenshot.png)
+
+#### **How the Evaluation Process Works**
+
+**1. Question Classification Testing**
+- Tests if the chatbot correctly identifies the question type
+- Compares detected type against expected type (geographic_analysis vs value_analysis)
+- Provides accuracy score based on classification correctness
+
+**2. Ground Truth Validation**
+- Compares chatbot response against EBA/ECB 2024 Report content
+- Validates key statistics and concepts mentioned in the response
+- Checks for proper source attribution and factual accuracy
+
+**3. Quality Scoring Calculation**
+The system uses a weighted approach to ensure fair evaluation:
+
+- **Primary Statistics (80% weight)**: Core answer elements that directly answer the question
+  - Q5: "ten times", "outside the EEA", "fraud rates", "card payments"
+  - Q6: "71%", "H1 2023", "cross-border", "card payment"
+- **Secondary Statistics (10% weight)**: Supporting details and additional context
+  - Q5: "77%", "SCA", "counterpart"
+  - Q6: "43%", "47%", "28%", "value terms"
+- **Ground Truth Validation (5% weight)**: Document-based accuracy verification
+- **Core Answer Bonus (5% weight)**: Extra points for directly answering the main question
+
+**4. Score Calculation Formula**
+```
+Accuracy Score = (Primary Score × 0.8) + (Secondary Score × 0.1) + (Ground Truth × 0.05) + (Core Bonus × 0.05)
+Overall Score = (Accuracy × 0.6) + (Relevance × 0.4)
+```
+
+**5. Confidence Level Assignment**
+- **High (90%+)**: Response contains all primary elements and most secondary details
+- **Medium (70-89%)**: Response contains most primary elements with some secondary details
+- **Low (<70%)**: Response missing key primary elements or has significant gaps
+
+#### **Evaluation Features**
+- **Fair Scoring**: Focuses on core answers rather than penalizing missing supporting details
+- **Question-Specific Logic**: Tailored evaluation criteria for different question types
+- **Statistical Validation**: Checks for key concepts, percentages, and time references
+- **Document-Based Ground Truth**: Uses EBA/ECB 2024 Report as authoritative source
+- **Robust Framework**: Consistent scoring across different response qualities
+
 ### **API Testing**
 ```bash
 # Health check
@@ -255,6 +347,8 @@ curl -X POST http://localhost:5000/question \
 - [x] Document Fallback System (100%)
 - [x] Interactive Chart Generation (100%)
 - [x] Enhanced Q1/Q2 Response Analysis (100%)
+- [x] Answer Evaluation System (100%)
+- [x] Quality Scoring System (100%)
 
 ### 🎯 **Key Achievements**
 - **100% Core Questions Coverage**: All 6 test questions working perfectly
@@ -268,6 +362,9 @@ curl -X POST http://localhost:5000/question \
 - **Statistical Analysis**: Mean, median, standard deviation, quartiles, and risk categorization
 - **Trend Analysis**: First half vs. second half comparisons and volatility insights
 - **Forecasting System**: ARIMA-based predictive analytics
+- **Answer Evaluation System**: Comprehensive response quality assessment with accuracy, relevance, and overall scoring
+- **Quality Scoring**: Weighted scoring approach focusing on core answers with fair evaluation
+- **Ground Truth Validation**: Document-based validation against EBA/ECB 2024 Report
 - **Lightweight Deployment**: 1GB Docker image with full functionality
 - **API-Based Microservices**: Scalable, modular architecture
 

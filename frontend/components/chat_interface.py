@@ -675,7 +675,21 @@ class ChatInterface:
             st.html(chat_content)
         except:
             # Fallback to markdown if st.html is not available
-            st.markdown(chat_content, unsafe_allow_html=True)
+            # Disable hyperlink conversion by using a custom CSS approach
+            st.markdown(f"""
+            <style>
+            .chat-container a {{
+                color: #ffffff !important;
+                text-decoration: none !important;
+                pointer-events: none !important;
+            }}
+            .chat-container a:hover {{
+                color: #ffffff !important;
+                text-decoration: none !important;
+            }}
+            </style>
+            {chat_content}
+            """, unsafe_allow_html=True)
     
     def get_response_html(self, response_data):
         """Convert response data to HTML string"""
@@ -684,14 +698,24 @@ class ChatInterface:
         
         html = ""
         
+        # Wrap everything in a div with specific styling to prevent hyperlink conversion
+        html += '<div style="color: #ffffff; text-decoration: none;">'
+        
         # Response title
         title = str(response_data.get('title', '')).replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
         html += f"<strong>{title}</strong><br><br>"
         
         # Explanation - convert markdown to HTML
         explanation = str(response_data.get('explanation', ''))
-        # Convert markdown to HTML
-        explanation_html = self._markdown_to_html(explanation)
+        
+        # Check if the explanation already contains HTML tags
+        if '<h4' in explanation or '<strong' in explanation or '<em' in explanation:
+            # If it already has HTML tags, use it as-is but escape quotes
+            explanation_html = explanation.replace('"', '&quot;')
+        else:
+            # Convert markdown to HTML
+            explanation_html = self._markdown_to_html(explanation)
+        
         html += f"{explanation_html}<br><br>"
         
         # Metrics (if available)
@@ -725,6 +749,9 @@ class ChatInterface:
         
         # Sources removed - no longer displayed in UI
         
+        # Close the div
+        html += '</div>'
+        
         return html
     
     def is_chart_generatable(self, response_data):
@@ -751,6 +778,18 @@ class ChatInterface:
         for prefix in status_prefixes:
             html = re.sub(prefix, '', html, flags=re.IGNORECASE)
         
+        # Prevent URL auto-linking by escaping URLs
+        # This prevents Streamlit from automatically converting URLs to hyperlinks
+        url_pattern = r'(https?://[^\s<>"{}|\\^`\[\]]+)'
+        html = re.sub(url_pattern, r'<span>\1</span>', html)
+        
+        # Also prevent email addresses from being converted to hyperlinks
+        email_pattern = r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'
+        html = re.sub(email_pattern, r'<span>\1</span>', html)
+        
+        # Note: Removed text pattern prevention as it was causing placeholder issues
+        # The CSS rules should handle hyperlink prevention instead
+        
         # Convert **bold** to <strong>bold</strong>
         html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
         
@@ -758,7 +797,9 @@ class ChatInterface:
         html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', html)
         
         # Convert section headers (Methodology:, Key Insights:, etc.)
-        html = re.sub(r'^(\w+[^:]*:)\s*$', r'<h4 style="color: #4a9eff; margin: 1rem 0 0.5rem 0; font-size: 1.1rem;">\1</h4>', html, flags=re.MULTILINE)
+        # But don't convert if the text already contains HTML tags
+        if '<h4' not in html and '<strong' not in html:
+            html = re.sub(r'^(\w+[^:]*:)\s*$', r'<h4 style="color: #4a9eff; margin: 1rem 0 0.5rem 0; font-size: 1.1rem;">\1</h4>', html, flags=re.MULTILINE)
         
         # Process lines for lists and formatting
         lines = html.split('\n')
@@ -819,33 +860,12 @@ class ChatInterface:
         return html
     
     def _preserve_safe_html(self, text):
-        """Preserve safe HTML tags while escaping dangerous ones"""
+        """Preserve safe HTML tags while escaping dangerous ones and preventing hyperlink conversion"""
         import re
         
-        # List of safe HTML tags to preserve (including h4 for section headers)
-        safe_tags = ['strong', 'em', 'b', 'i', 'u', 'br', 'p', 'div', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']
-        
-        # First, temporarily replace safe tags with placeholders
-        tag_placeholders = {}
-        placeholder_counter = 0
-        
-        for tag in safe_tags:
-            # Match opening and closing tags
-            pattern = rf'<{tag}[^>]*>.*?</{tag}>|<{tag}[^>]*/?>'
-            matches = re.finditer(pattern, text, re.IGNORECASE | re.DOTALL)
-            
-            for match in matches:
-                placeholder = f"__SAFE_TAG_{placeholder_counter}__"
-                tag_placeholders[placeholder] = match.group()
-                text = text.replace(match.group(), placeholder, 1)
-                placeholder_counter += 1
-        
-        # Escape remaining HTML characters
-        text = text.replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-        
-        # Restore safe tags
-        for placeholder, original_tag in tag_placeholders.items():
-            text = text.replace(placeholder, original_tag)
+        # Don't escape HTML characters - we want to preserve the HTML formatting
+        # Just escape quotes to prevent issues
+        text = text.replace('"', '&quot;')
         
         return text
     

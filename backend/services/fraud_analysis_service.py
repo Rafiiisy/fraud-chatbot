@@ -22,6 +22,7 @@ from core.query.query_classifier import QueryClassifier
 from data.api_database_manager import APIDatabaseManager
 from agents.agent_coordinator import AgentCoordinator
 from agents.forecasting_agent import ForecastingAgent
+from core.evaluation.answer_evaluator import AnswerEvaluator
 
 
 class FraudAnalysisService:
@@ -63,6 +64,16 @@ class FraudAnalysisService:
             self.logger.warning(f"Forecasting agent not available: {e}")
             self.forecasting_agent = None
             self.forecasting_available = False
+        
+        # Initialize answer evaluator
+        try:
+            self.answer_evaluator = AnswerEvaluator(data_dir)
+            self.evaluation_available = True
+            self.logger.info("Answer evaluator initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"Answer evaluator not available: {e}")
+            self.answer_evaluator = None
+            self.evaluation_available = False
         
         # Service state
         self.initialized = False
@@ -1131,6 +1142,36 @@ class FraudAnalysisService:
             return {'error': 'Service not initialized'}
         
         return self.database_manager.get_data_summary()
+    
+    def evaluate_answer(self, question_id: str, chatbot_response: str) -> Dict[str, Any]:
+        """
+        Evaluate a chatbot response for Q5 and Q6 questions
+        
+        Args:
+            question_id: "5" or "6"
+            chatbot_response: The chatbot's response text
+            
+        Returns:
+            Dictionary containing evaluation results
+        """
+        try:
+            if not self.evaluation_available or not self.answer_evaluator:
+                return {
+                    'success': False,
+                    'error': 'Answer evaluation not available'
+                }
+            
+            # Perform evaluation
+            evaluation_result = self.answer_evaluator.evaluate_response(question_id, chatbot_response)
+            
+            return evaluation_result
+            
+        except Exception as e:
+            self.logger.error(f"Error evaluating answer: {e}")
+            return {
+                'success': False,
+                'error': f'Evaluation failed: {str(e)}'
+            }
     
     def _handle_forecasting_question(self, question: str, question_type: QuestionType,
                                    confidence: float, metadata: Dict) -> Dict[str, Any]:

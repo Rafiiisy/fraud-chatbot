@@ -187,6 +187,62 @@ def get_status():
         logging.error(f"Error getting status: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/answer-evaluation', methods=['POST'])
+def evaluate_answer():
+    """Evaluate chatbot response for Q5 and Q6 questions"""
+    try:
+        if service is None:
+            initialize_service()
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided'
+            }), 400
+        
+        # Validate required fields
+        if 'question_id' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'question_id is required'
+            }), 400
+        
+        if 'chatbot_response' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'chatbot_response is required'
+            }), 400
+        
+        question_id = str(data['question_id'])
+        chatbot_response = str(data['chatbot_response'])
+        
+        # Validate question_id
+        if question_id not in ['5', '6']:
+            return jsonify({
+                'success': False,
+                'error': 'question_id must be "5" or "6"'
+            }), 400
+        
+        # Validate response is not empty
+        if not chatbot_response.strip():
+            return jsonify({
+                'success': False,
+                'error': 'chatbot_response cannot be empty'
+            }), 400
+        
+        # Perform evaluation
+        evaluation_result = service.evaluate_answer(question_id, chatbot_response)
+        
+        return jsonify(evaluation_result), 200
+        
+    except Exception as e:
+        logging.error(f"Error evaluating answer: {e}")
+        return jsonify({
+            'success': False,
+            'error': f'Evaluation failed: {str(e)}'
+        }), 500
+
 if __name__ == '__main__':
     # Setup logging
     logging.basicConfig(level=logging.INFO)

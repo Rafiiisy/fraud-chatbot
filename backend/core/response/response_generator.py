@@ -513,6 +513,6 @@ class ResponseGenerator:
         
         context_parts = []
         for i, chunk in enumerate(document_chunks[:3]):  # Limit to top 3 chunks
-            context_parts.append(f"Source {i+1}: {chunk.get('text', '')[:500]}...")
+            context_parts.append(f"{chunk.get('text', '')[:500]}...")
         
         return "\n\n".join(context_parts)
