@@ -186,11 +186,17 @@ cd fraud-chatbot
 echo "OPENAI_API_KEY=your_api_key_here" > backend/env
 ```
 
-### **3. Add Dataset (Optional)**
+### **3. Add Dataset (Required)**
 ```bash
-# Place your CSV files in the dataset directory
+# Download the fraud detection dataset from Kaggle
+# Visit: https://www.kaggle.com/datasets/kartik2112/fraud-detection/data?select=fraud%20dataset
+# Download fraudTrain.csv and fraudTest.csv files
+
+# Create dataset directory and place the files
 mkdir -p dataset/archive
-# Copy fraudTrain.csv and fraudTest.csv to dataset/archive/
+# Copy the downloaded files to dataset/archive/
+# - fraudTrain.csv
+# - fraudTest.csv
 ```
 
 ### **4. Run Using Scripts**
