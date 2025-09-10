@@ -29,8 +29,8 @@ class ResponseDisplay:
         # Explanation
         st.markdown(response_data['explanation'])
         
-        # Metrics (if available)
-        if 'metrics' in response_data and response_data['metrics']:
+        # Metrics (if available) - skip for 'value_analysis' responses to avoid duplication with insights
+        if 'metrics' in response_data and response_data['metrics'] and response_data.get('type') != 'value_analysis':
             st.subheader("📊 Key Metrics")
             cols = st.columns(len(response_data['metrics']))
             for i, (key, value) in enumerate(response_data['metrics'].items()):

@@ -5,11 +5,13 @@ Handles the chat input and message display
 import streamlit as st
 from datetime import datetime
 from .storage_manager import get_storage_manager
+from .error_handler import ErrorHandler
 
 
 class ChatInterface:
     def __init__(self):
         self.storage_manager = get_storage_manager()
+        self.error_handler = ErrorHandler()
         self.initialize_chat_history()
     
     def initialize_chat_history(self):
@@ -119,12 +121,12 @@ class ChatInterface:
         # Check if backend is healthy
         if not api_client.health_check():
             st.error("⚠️ Backend API is not available. Please ensure the backend is running on http://localhost:5000")
-            # Update the last assistant message with error
-            st.session_state.chat_history[-1]["response"] = {
-                "error": True,
-                "message": "❌ Backend API not available",
-                "details": "Please ensure the backend is running on http://localhost:5000"
-            }
+            # Format error with user-friendly message
+            formatted_error = self.error_handler.format_error_response({
+                "error": "Backend API not available",
+                "message": "Please ensure the backend is running on http://localhost:5000"
+            })
+            st.session_state.chat_history[-1]["response"] = formatted_error
             st.session_state.chat_history[-1]["is_processing"] = False
             return
         
@@ -135,12 +137,9 @@ class ChatInterface:
             
             # Check if there was an error
             if response_data.get("status") == "error":
-                # Update the last assistant message with error
-                st.session_state.chat_history[-1]["response"] = {
-                    "error": True,
-                    "message": f"❌ Error: {response_data.get('error', 'Unknown error')}",
-                    "details": response_data.get('message', 'No additional details')
-                }
+                # Format error with user-friendly message
+                formatted_error = self.error_handler.format_error_response(response_data)
+                st.session_state.chat_history[-1]["response"] = formatted_error
                 st.session_state.chat_history[-1]["is_processing"] = False
             else:
                 # Convert backend response to frontend format
@@ -169,11 +168,8 @@ class ChatInterface:
             
         except Exception as e:
             # Handle any processing errors
-            st.session_state.chat_history[-1]["response"] = {
-                "error": True,
-                "message": f"❌ Processing Error: {str(e)}",
-                "details": "An error occurred while processing your question"
-            }
+            formatted_error = self.error_handler.format_processing_error(e)
+            st.session_state.chat_history[-1]["response"] = formatted_error
             st.session_state.chat_history[-1]["is_processing"] = False
         
         # Save chat history to storage
@@ -235,12 +231,12 @@ class ChatInterface:
         # Check if backend is healthy
         if not api_client.health_check():
             st.error("⚠️ Backend API is not available. Please ensure the backend is running on http://localhost:5000")
-            # Update the last assistant message with error
-            st.session_state.chat_history[-1]["response"] = {
-                "error": True,
-                "message": "❌ Backend API not available",
-                "details": "Please ensure the backend is running on http://localhost:5000"
-            }
+            # Format error with user-friendly message
+            formatted_error = self.error_handler.format_error_response({
+                "error": "Backend API not available",
+                "message": "Please ensure the backend is running on http://localhost:5000"
+            })
+            st.session_state.chat_history[-1]["response"] = formatted_error
             st.session_state.chat_history[-1]["is_processing"] = False
             return
         
@@ -251,12 +247,9 @@ class ChatInterface:
             
             # Check if there was an error
             if response_data.get("status") == "error":
-                # Update the last assistant message with error
-                st.session_state.chat_history[-1]["response"] = {
-                    "error": True,
-                    "message": f"❌ Error: {response_data.get('error', 'Unknown error')}",
-                    "details": response_data.get('message', 'No additional details')
-                }
+                # Format error with user-friendly message
+                formatted_error = self.error_handler.format_error_response(response_data)
+                st.session_state.chat_history[-1]["response"] = formatted_error
                 st.session_state.chat_history[-1]["is_processing"] = False
             else:
                 # Convert backend response to frontend format
@@ -285,11 +278,8 @@ class ChatInterface:
             
         except Exception as e:
             # Handle any processing errors
-            st.session_state.chat_history[-1]["response"] = {
-                "error": True,
-                "message": f"❌ Processing Error: {str(e)}",
-                "details": "An error occurred while processing your question"
-            }
+            formatted_error = self.error_handler.format_processing_error(e)
+            st.session_state.chat_history[-1]["response"] = formatted_error
             st.session_state.chat_history[-1]["is_processing"] = False
         
         # Save chat history to storage
@@ -319,6 +309,55 @@ class ChatInterface:
         statistics = data.get('statistics', backend_response.get('statistics', {}))
         analysis_data = data.get('analysis_data', backend_response.get('data', []))
         chart_data = data.get('chart', backend_response.get('chart_data', {}))
+        
+        # Handle AI SQL generator responses specifically
+        if backend_response.get('handler') == 'ai_sql_generator' and analysis_data:
+            # Convert the analysis_data to a more meaningful format
+            if isinstance(analysis_data, list) and len(analysis_data) > 0:
+                record = analysis_data[0]
+                
+                # Extract meaningful statistics from the SQL result
+                if 'fraud_rate_percent' in record:
+                    fraud_rate = record['fraud_rate_percent']
+                elif 'fraud_rate' in record:
+                    fraud_rate = record['fraud_rate'] * 100
+                else:
+                    fraud_rate = 0
+                
+                total_transactions = record.get('total_transactions', 0)
+                fraud_count = record.get('fraud_count', 0)
+                avg_amount = record.get('avg_amount', 0)
+                
+                # Create a meaningful explanation
+                explanation = f"Based on the analysis of {total_transactions:,} transactions, the fraud rate is {fraud_rate:.2f}%. "
+                
+                if 'amount_range' in record:
+                    explanation += f"This analysis covers the {record['amount_range']} range. "
+                elif 'amt >' in backend_response.get('sql_query', ''):
+                    # Extract amount from SQL query
+                    import re
+                    amount_match = re.search(r'amt > (\d+)', backend_response.get('sql_query', ''))
+                    if amount_match:
+                        amount = amount_match.group(1)
+                        explanation += f"For transactions over ${amount:,}, "
+                
+                explanation += f"Out of {total_transactions:,} total transactions, {fraud_count:,} were fraudulent. "
+                if avg_amount > 0:
+                    explanation += f"The average transaction amount was ${avg_amount:,.2f}."
+                
+                # Create insights from the data (avoid duplicating information already in explanation)
+                insights = []
+                
+                # Only add insights that provide additional value beyond the explanation
+                if 'amount_range' in record:
+                    insights.append(f"Analysis covers the {record['amount_range']} amount range")
+                
+                # Add trend information if available
+                if fraud_rate > 0:
+                    insights.append(f"Fraud rate of {fraud_rate:.2f}% indicates {'high' if fraud_rate > 5 else 'moderate' if fraud_rate > 2 else 'low'} risk level")
+                
+                # Don't create statistics for metrics display - we'll use insights instead
+                statistics = {}
         
         # Create formatted response
         formatted_response = {
@@ -365,15 +404,8 @@ class ChatInterface:
     
     def _get_title_for_question_type(self, question_type):
         """Get appropriate title based on question type"""
-        titles = {
-            'temporal_analysis': '📈 Fraud Rate Analysis',
-            'merchant_analysis': '🏪 Merchant Fraud Analysis',
-            'geographic_analysis': '🌍 Geographic Fraud Analysis',
-            'value_analysis': '💰 Fraud Value Analysis',
-            'fraud_methods': '📄 Fraud Methods Analysis',
-            'system_components': '🔧 Fraud Detection System Components'
-        }
-        return titles.get(question_type, '🤖 Fraud Analysis')
+        # Return empty string to remove response type titles
+        return ""
     
     def _format_statistics(self, statistics):
         """Format statistics for display"""
@@ -701,9 +733,10 @@ class ChatInterface:
         # Wrap everything in a div with specific styling to prevent hyperlink conversion
         html += '<div style="color: #ffffff; text-decoration: none;">'
         
-        # Response title
+        # Response title (only show if not empty)
         title = str(response_data.get('title', '')).replace('"', '&quot;').replace('<', '&lt;').replace('>', '&gt;')
-        html += f"<strong>{title}</strong><br><br>"
+        if title.strip():
+            html += f"<strong>{title}</strong><br><br>"
         
         # Explanation - convert markdown to HTML
         explanation = str(response_data.get('explanation', ''))
@@ -874,14 +907,15 @@ class ChatInterface:
         if not response_data:
             return
         
-        # Response title
-        st.markdown(f"**{response_data['title']}**")
+        # Response title (only show if not empty)
+        if response_data.get('title', '').strip():
+            st.markdown(f"**{response_data['title']}**")
         
         # Explanation
         st.markdown(response_data['explanation'])
         
-        # Metrics (if available)
-        if 'metrics' in response_data:
+        # Metrics (if available) - skip for 'value_analysis' responses to avoid duplication with insights
+        if 'metrics' in response_data and response_data.get('type') != 'value_analysis':
             cols = st.columns(len(response_data['metrics']))
             for i, (key, value) in enumerate(response_data['metrics'].items()):
                 with cols[i]:

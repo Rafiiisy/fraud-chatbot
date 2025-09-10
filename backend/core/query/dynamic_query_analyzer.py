@@ -76,7 +76,7 @@ Question: "{query}"
 
 Return JSON with:
 {{
-    "question_type": "temporal_analysis|merchant_analysis|fraud_methods|system_components|geographic_analysis|value_analysis|document_analysis",
+    "question_type": "temporal_analysis|merchant_analysis|fraud_methods|system_components|geographic_analysis|value_analysis|forecasting|document_analysis",
     "confidence": 0.0-1.0,
     "key_concepts": ["main", "concepts"],
     "search_terms": ["search", "terms"],
@@ -91,11 +91,15 @@ Return JSON with:
 IMPORTANT RULES:
 1. If asking about specific data in CSV columns (trans_date_trans_time, cc_num, merchant, category, amt, first, last, gender, street, city, state, zip, lat, long, city_pop, job, dob, trans_num, unix_time, merch_lat, merch_long, is_fraud), use appropriate analysis type (temporal_analysis, merchant_analysis, value_analysis, etc.)
 
-2. If asking about general fraud statistics, reports, or information NOT in CSV columns, use "document_analysis"
+2. If asking about FUTURE trends, predictions, forecasts, or "next year" patterns, use "forecasting"
 
-3. For "What share of total card fraud value in H1 2023 was due to cross-border transactions?" - this is asking about fraud statistics from reports, NOT CSV data, so use "document_analysis"
+3. If asking about general fraud statistics, reports, or information NOT in CSV columns, use "document_analysis"
 
-4. Extract all numbers, percentages, time periods mentioned
+4. For "What share of total card fraud value in H1 2023 was due to cross-border transactions?" - this is asking about fraud statistics from reports, NOT CSV data, so use "document_analysis"
+
+5. For "What are the predicted fraud patterns for next year?" - this is asking for future predictions, so use "forecasting"
+
+6. Extract all numbers, percentages, time periods mentioned
 """
     
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
@@ -121,7 +125,9 @@ IMPORTANT RULES:
         confidence = 0.7
         
         # Look for question type indicators
-        if any(term in response.lower() for term in ['temporal', 'time', 'fluctuate', 'trend']):
+        if any(term in response.lower() for term in ['forecast', 'predict', 'future', 'next', 'predicted', 'patterns']):
+            question_type = "forecasting"
+        elif any(term in response.lower() for term in ['temporal', 'time', 'fluctuate', 'trend']):
             question_type = "temporal_analysis"
         elif any(term in response.lower() for term in ['merchant', 'category', 'highest']):
             question_type = "merchant_analysis"
@@ -131,8 +137,6 @@ IMPORTANT RULES:
             question_type = "system_components"
         elif any(term in response.lower() for term in ['eea', 'geographic', 'outside', 'cross-border']):
             question_type = "geographic_analysis"
-        elif any(term in response.lower() for term in ['forecast', 'predict', 'future', 'next']):
-            question_type = "forecasting"
         
         return {
             "question_type": question_type,

@@ -437,22 +437,135 @@ class AISQLGenerator:
         }
     
     def _ai_generate_sql(self, question: str, context: Dict) -> Dict:
-        """Use AI to generate SQL for complex questions (placeholder for now)"""
+        """Generate SQL for complex questions based on question analysis"""
         table_name = self.schema.get("main_table", "transactions")
         
-        # For now, return a basic query structure
-        # In a full implementation, this would use OpenAI to generate SQL
+        # Analyze the question to generate appropriate SQL
+        question_lower = question.lower()
+        
+        # Escape single quotes in the question for SQL
+        escaped_question = question.replace("'", "''")
+        
+        # Check for specific patterns and generate appropriate queries
+        if "over $" in question_lower or "above $" in question_lower or ">$" in question_lower:
+            # Extract amount from question
+            import re
+            amount_match = re.search(r'(\$?)(\d+(?:,\d{3})*(?:\.\d{2})?)', question)
+            if amount_match:
+                amount = amount_match.group(2).replace(',', '')
+                return self._generate_amount_based_query(amount, "above", escaped_question, table_name)
+        
+        elif "under $" in question_lower or "below $" in question_lower or "<$" in question_lower:
+            # Extract amount from question
+            import re
+            amount_match = re.search(r'(\$?)(\d+(?:,\d{3})*(?:\.\d{2})?)', question)
+            if amount_match:
+                amount = amount_match.group(2).replace(',', '')
+                return self._generate_amount_based_query(amount, "below", escaped_question, table_name)
+        
+        elif "vary" in question_lower or "compare" in question_lower or "difference" in question_lower:
+            # Generate comparison query
+            return self._generate_comparison_query(escaped_question, table_name)
+        
+        elif "trend" in question_lower or "over time" in question_lower:
+            # Generate time-based query
+            return self._generate_time_based_query(escaped_question, table_name)
+        
+        else:
+            # Default query for general fraud analysis
+            return self._generate_default_query(escaped_question, table_name)
+    
+    def _generate_amount_based_query(self, amount: str, comparison: str, question: str, table_name: str) -> Dict:
+        """Generate SQL for amount-based fraud analysis"""
+        if comparison == "above":
+            where_clause = f"amt > {amount}"
+            description = f"Fraud analysis for transactions above ${amount}"
+        else:
+            where_clause = f"amt < {amount}"
+            description = f"Fraud analysis for transactions below ${amount}"
+        
         return {
             "sql": f"""
             SELECT 
-                'AI-generated query for: {question}' as message,
+                '{question}' as question,
                 COUNT(*) as total_transactions,
-                AVG(is_fraud) as fraud_rate
+                SUM(is_fraud) as fraud_count,
+                ROUND(AVG(is_fraud) * 100, 2) as fraud_rate_percent,
+                ROUND(AVG(amt), 2) as avg_amount,
+                ROUND(SUM(CASE WHEN is_fraud = 1 THEN amt ELSE 0 END), 2) as total_fraud_amount,
+                ROUND(SUM(amt), 2) as total_transaction_amount
+            FROM {table_name}
+            WHERE {where_clause}
+            """,
+            "description": description,
+            "success": True
+        }
+    
+    def _generate_comparison_query(self, question: str, table_name: str) -> Dict:
+        """Generate SQL for comparison-based fraud analysis"""
+        return {
+            "sql": f"""
+            SELECT 
+                '{question}' as question,
+                CASE 
+                    WHEN amt < 100 THEN 'Under $100'
+                    WHEN amt < 500 THEN '$100-$500'
+                    WHEN amt < 1000 THEN '$500-$1000'
+                    WHEN amt < 5000 THEN '$1000-$5000'
+                    ELSE 'Over $5000'
+                END as amount_range,
+                COUNT(*) as total_transactions,
+                SUM(is_fraud) as fraud_count,
+                ROUND(AVG(is_fraud) * 100, 2) as fraud_rate_percent,
+                ROUND(AVG(amt), 2) as avg_amount
+            FROM {table_name}
+            GROUP BY 
+                CASE 
+                    WHEN amt < 100 THEN 'Under $100'
+                    WHEN amt < 500 THEN '$100-$500'
+                    WHEN amt < 1000 THEN '$500-$1000'
+                    WHEN amt < 5000 THEN '$1000-$5000'
+                    ELSE 'Over $5000'
+                END
+            ORDER BY MIN(amt)
+            """,
+            "description": "Fraud rate comparison across amount ranges",
+            "success": True
+        }
+    
+    def _generate_time_based_query(self, question: str, table_name: str) -> Dict:
+        """Generate SQL for time-based fraud analysis"""
+        return {
+            "sql": f"""
+            SELECT 
+                '{question}' as question,
+                strftime('%Y-%m', datetime(trans_date, 'unixepoch')) as month,
+                COUNT(*) as total_transactions,
+                SUM(is_fraud) as fraud_count,
+                ROUND(AVG(is_fraud) * 100, 2) as fraud_rate_percent
+            FROM {table_name}
+            GROUP BY strftime('%Y-%m', datetime(trans_date, 'unixepoch'))
+            ORDER BY month
+            """,
+            "description": "Fraud rate trends over time",
+            "success": True
+        }
+    
+    def _generate_default_query(self, question: str, table_name: str) -> Dict:
+        """Generate default SQL for general fraud analysis"""
+        return {
+            "sql": f"""
+            SELECT 
+                '{question}' as question,
+                COUNT(*) as total_transactions,
+                SUM(is_fraud) as fraud_count,
+                ROUND(AVG(is_fraud) * 100, 2) as fraud_rate_percent,
+                ROUND(AVG(amt), 2) as avg_amount,
+                ROUND(SUM(CASE WHEN is_fraud = 1 THEN amt ELSE 0 END), 2) as total_fraud_amount
             FROM {table_name}
             """,
-            "description": "AI-generated SQL query (placeholder)",
-            "success": True,
-            "note": "Full AI integration would be implemented here"
+            "description": "General fraud analysis",
+            "success": True
         }
     
     def get_schema_info(self) -> Dict:

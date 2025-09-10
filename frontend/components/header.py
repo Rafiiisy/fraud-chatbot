@@ -628,3 +628,98 @@ class Header:
             }
         </style>
         """, unsafe_allow_html=True)
+        
+        # Add JavaScript for localStorage management and auto-scroll
+        st.markdown("""
+        <script>
+        // Local Storage Management with TTL
+        const CHAT_STORAGE_KEY = 'fraud_chatbot_history';
+        const TTL_MINUTES = 30;
+
+        // Save chat history to localStorage
+        function saveChatHistory(chatHistory) {
+            try {
+                const dataToSave = {
+                    chatHistory: chatHistory,
+                    timestamp: Date.now(),
+                    ttl: TTL_MINUTES * 60 * 1000 // Convert to milliseconds
+                };
+                localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(dataToSave));
+                console.log('Chat history saved to localStorage');
+            } catch (error) {
+                console.error('Error saving chat history:', error);
+            }
+        }
+
+        // Load chat history from localStorage
+        function loadChatHistory() {
+            try {
+                const stored = localStorage.getItem(CHAT_STORAGE_KEY);
+                if (!stored) return [];
+
+                const data = JSON.parse(stored);
+                const now = Date.now();
+
+                // Check if data has expired
+                if (now - data.timestamp > data.ttl) {
+                    localStorage.removeItem(CHAT_STORAGE_KEY);
+                    console.log('Chat history expired, cleared from localStorage');
+                    return [];
+                }
+
+                console.log('Chat history loaded from localStorage');
+                return data.chatHistory || [];
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                return [];
+            }
+        }
+
+        // Clean up expired chat history
+        function cleanupExpiredHistory() {
+            try {
+                const stored = localStorage.getItem(CHAT_STORAGE_KEY);
+                if (!stored) return;
+
+                const data = JSON.parse(stored);
+                const now = Date.now();
+
+                if (now - data.timestamp > data.ttl) {
+                    localStorage.removeItem(CHAT_STORAGE_KEY);
+                    console.log('Expired chat history cleaned up');
+                }
+            } catch (error) {
+                console.error('Error cleaning up chat history:', error);
+            }
+        }
+
+        // Auto-scroll to bottom of chat container
+        function scrollToBottom() {
+            const container = document.getElementById('chat-container');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // Initialize chat history from localStorage
+        function initializeChatHistory() {
+            const savedHistory = loadChatHistory();
+            if (savedHistory.length > 0) {
+                console.log('Found saved chat history:', savedHistory.length, 'messages');
+            }
+        }
+
+        // Scroll to bottom when page loads
+        window.addEventListener('load', function() {
+            scrollToBottom();
+            initializeChatHistory();
+            cleanupExpiredHistory();
+        });
+
+        // Scroll to bottom after a short delay to ensure content is rendered
+        setTimeout(scrollToBottom, 100);
+
+        // Clean up expired history every 5 minutes
+        setInterval(cleanupExpiredHistory, 5 * 60 * 1000);
+        </script>
+        """, unsafe_allow_html=True)

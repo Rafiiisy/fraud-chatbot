@@ -319,6 +319,7 @@ class QueryClassifier:
             LLMQuestionType.SYSTEM_COMPONENTS: QuestionType.SYSTEM_COMPONENTS,
             LLMQuestionType.GEOGRAPHIC_ANALYSIS: QuestionType.GEOGRAPHIC_ANALYSIS,
             LLMQuestionType.VALUE_ANALYSIS: QuestionType.VALUE_ANALYSIS,
+            LLMQuestionType.FORECASTING: QuestionType.FORECASTING,
             LLMQuestionType.GENERAL_QUESTION: QuestionType.GENERAL_QUESTION
         }
         return type_mapping.get(llm_type, QuestionType.GENERAL_QUESTION)
@@ -664,7 +665,7 @@ class QueryClassifier:
     
     def validate_query(self, query: str) -> Tuple[bool, List[str]]:
         """
-        Validate if the query is suitable for processing
+        Validate if the query is suitable for processing using LLM-based relevance detection
         
         Args:
             query: User's query
@@ -677,13 +678,41 @@ class QueryClassifier:
         # Check if query is empty or too short
         if not query or len(query.strip()) < 3:
             errors.append("Query is too short. Please provide a more detailed question.")
+            return False, errors
         
-        # Check if query contains fraud-related keywords
-        fraud_keywords = ['fraud', 'fraudulent', 'fraud rate', 'fraud detection', 'credit card']
-        if not any(keyword in query.lower() for keyword in fraud_keywords):
-            errors.append("Query should be related to fraud analysis.")
+        # Use LLM for relevance detection if available
+        if self.use_llm:
+            try:
+                is_fraud_related, confidence, reasoning = self.openai.is_fraud_related_query(query)
+                
+                # If LLM says it's not fraud-related with high confidence, reject it
+                if not is_fraud_related and confidence > 0.7:
+                    errors.append("This question is not related to fraud analysis. Please ask about fraud detection, credit card fraud, or payment security.")
+                    return False, errors
+                
+                # If LLM says it's fraud-related or has low confidence, allow it to proceed
+                if is_fraud_related or confidence <= 0.7:
+                    self.logger.info(f"LLM relevance check: fraud_related={is_fraud_related}, confidence={confidence:.2f}, reasoning={reasoning}")
+                    # Continue to security validation below
+                else:
+                    # Fallback to basic keyword check if LLM is uncertain
+                    if not self._basic_fraud_keyword_check(query):
+                        errors.append("This question doesn't appear to be related to fraud analysis. Please ask about fraud detection, payment security, or credit card fraud patterns.")
+                        return False, errors
+                        
+            except Exception as e:
+                self.logger.warning(f"LLM relevance check failed: {e}, falling back to keyword validation")
+                # Fallback to basic keyword check
+                if not self._basic_fraud_keyword_check(query):
+                    errors.append("This question doesn't appear to be related to fraud analysis. Please ask about fraud detection, payment security, or credit card fraud patterns.")
+                    return False, errors
+        else:
+            # Fallback to basic keyword check if LLM not available
+            if not self._basic_fraud_keyword_check(query):
+                errors.append("This question doesn't appear to be related to fraud analysis. Please ask about fraud detection, payment security, or credit card fraud patterns.")
+                return False, errors
         
-        # Check for potentially problematic content
+        # Check for potentially problematic content (security validation)
         problematic_patterns = [
             r'\b(drop|delete|insert|update|alter|create)\b',
             r'--',
@@ -697,6 +726,27 @@ class QueryClassifier:
                 break
         
         return len(errors) == 0, errors
+    
+    def _basic_fraud_keyword_check(self, query: str) -> bool:
+        """
+        Basic keyword-based fraud relevance check as fallback
+        
+        Args:
+            query: User's query
+            
+        Returns:
+            True if query appears fraud-related, False otherwise
+        """
+        query_lower = query.lower().strip()
+        
+        # Check if query contains fraud-related keywords
+        fraud_keywords = ['fraud', 'fraudulent', 'fraud rate', 'fraud detection', 'credit card', 
+                         'payment', 'transaction', 'security', 'risk', 'scam', 'theft', 'unauthorized',
+                         'merchant', 'eea', 'cross-border', 'geographic', 'temporal', 'forecast',
+                         'analysis', 'data', 'statistics', 'rate', 'percentage', 'share', 'value',
+                         'predicted', 'patterns', 'next year', 'future', 'trends', 'prediction']
+        
+        return any(keyword in query_lower for keyword in fraud_keywords)
     
     def get_suggested_questions(self) -> List[Dict[str, str]]:
         """

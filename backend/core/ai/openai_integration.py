@@ -31,6 +31,7 @@ class QuestionType(Enum):
     SYSTEM_COMPONENTS = "system_components"
     GEOGRAPHIC_ANALYSIS = "geographic_analysis"
     VALUE_ANALYSIS = "value_analysis"
+    FORECASTING = "forecasting"
     GENERAL_QUESTION = "general_question"
 
 class OpenAIIntegration:
@@ -58,6 +59,60 @@ class OpenAIIntegration:
             self.logger.error(f"Connection test failed: {e}")
             return False
     
+    def is_fraud_related_query(self, question: str) -> Tuple[bool, float, str]:
+        """Check if query is fraud-related using LLM"""
+        try:
+            prompt = f"""
+You are an expert fraud detection analyst. Determine if the following question is related to fraud analysis, credit card fraud, payment security, or financial crime.
+
+FRAUD-RELATED TOPICS INCLUDE:
+- Credit card fraud patterns, rates, and trends
+- Fraud detection systems and methods
+- Payment security and risk analysis
+- Financial crime analysis and prevention
+- Fraud forecasting and predictions
+- Geographic fraud analysis (EEA vs non-EEA)
+- Merchant fraud analysis
+- Fraud value and financial impact analysis
+- Fraud methods and techniques
+- Fraud detection system components
+
+Question: "{question}"
+
+Respond with ONLY:
+IS_FRAUD_RELATED: [YES/NO]
+CONFIDENCE: [0.0-1.0]
+REASONING: [brief explanation]
+"""
+            
+            response = self._make_api_call(prompt, max_tokens=200)
+            
+            if not response:
+                return True, 0.5, "API call failed, assuming fraud-related"
+            
+            # Parse response
+            lines = response.strip().split('\n')
+            is_fraud_related = True
+            confidence = 0.5
+            reasoning = "No reasoning provided"
+            
+            for line in lines:
+                if line.startswith("IS_FRAUD_RELATED:"):
+                    is_fraud_related = line.split(":", 1)[1].strip().upper() == "YES"
+                elif line.startswith("CONFIDENCE:"):
+                    try:
+                        confidence = float(line.split(":", 1)[1].strip())
+                    except ValueError:
+                        confidence = 0.5
+                elif line.startswith("REASONING:"):
+                    reasoning = line.split(":", 1)[1].strip()
+            
+            return is_fraud_related, confidence, reasoning
+            
+        except Exception as e:
+            self.logger.error(f"Error in LLM relevance check: {e}")
+            return True, 0.3, f"Error in relevance check: {str(e)}"
+
     def classify_query_with_llm(self, question: str) -> Tuple[QuestionType, float, Dict[str, Any]]:
         """Classify query using OpenAI"""
         try:
@@ -75,13 +130,15 @@ CATEGORIES:
 4. SYSTEM_COMPONENTS - Questions about fraud detection system components (use documents)
 5. GEOGRAPHIC_ANALYSIS - Questions about fraud rates by region, EEA vs non-EEA (use CSV data)
 6. VALUE_ANALYSIS - Questions about fraud value, financial impact, H1 2023 data, shares, percentages (use CSV data)
-7. GENERAL_QUESTION - General questions not fitting above categories
+7. FORECASTING - Questions about future fraud trends, predictions, forecasts (use CSV data + forecasting models)
+8. GENERAL_QUESTION - General questions not fitting above categories
 
 Question: "{question}"
 
 IMPORTANT: 
 - If the question asks for specific data, numbers, percentages, or analysis from the database, classify as VALUE_ANALYSIS, TEMPORAL_ANALYSIS, MERCHANT_ANALYSIS, or GEOGRAPHIC_ANALYSIS
 - If the question asks about fraud methods, techniques, or system components, classify as FRAUD_METHODS or SYSTEM_COMPONENTS
+- If the question asks about future trends, predictions, or forecasts, classify as FORECASTING
 - Questions about "share of total", "percentage", "value", "H1 2023" should be VALUE_ANALYSIS
 
 Respond with ONLY the category name (e.g., "TEMPORAL_ANALYSIS") and a confidence score (0.0-1.0) in this format:
